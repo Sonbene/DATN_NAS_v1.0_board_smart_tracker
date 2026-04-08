@@ -1,0 +1,38 @@
+# Bỏ qua file chứa thông tin bảo mật (credentials/passwords)
+Config/secrets.h
+
+# ----------------------------------------------------
+# Các thành phần rác sinh ra bởi phần mềm IDE / Biên dịch
+# ----------------------------------------------------
+
+# Keil MDK-ARM
+*.uvguix.*
+*.uvoptx
+*.uvprojx.bak
+*.uvoptx.bak
+MDK-ARM/Smart_tracker_DATN_NAS/
+MDK-ARM/*.uvguix.*
+MDK-ARM/DebugConfig/
+
+# STM32CubeIDE / Eclipse
+.project
+.cproject
+.settings/
+Debug/
+Release/
+
+# Biến dịch (Build outputs)
+*.o
+*.out
+*.hex
+*.bin
+*.elf
+*.map
+*.lst
+*.axf
+*.crf
+*.d
+
+# Temporary files máy tính
+.DS_Store
+Thumbs.db
