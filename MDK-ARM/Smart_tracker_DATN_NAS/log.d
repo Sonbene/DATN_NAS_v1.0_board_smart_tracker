@@ -41,3 +41,17 @@ smart_tracker_datn_nas\log.o: ../Drivers/STM32L4xx_HAL_Driver/Inc/stm32l4xx_hal_
 smart_tracker_datn_nas\log.o: D:\Keil_C\ARM\ARMCC\Bin\..\include\stdio.h
 smart_tracker_datn_nas\log.o: D:\Keil_C\ARM\ARMCC\Bin\..\include\stdarg.h
 smart_tracker_datn_nas\log.o: D:\Keil_C\ARM\ARMCC\Bin\..\include\string.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS/cmsis_os.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h
+smart_tracker_datn_nas\log.o: ../Core/Inc/FreeRTOSConfig.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/projdefs.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/portable.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/deprecated_definitions.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F/portmacro.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/mpu_wrappers.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/task.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/list.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/timers.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/queue.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/semphr.h
+smart_tracker_datn_nas\log.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h

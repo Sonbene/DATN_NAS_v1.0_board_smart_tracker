@@ -16,28 +16,29 @@
 
 #ifdef DEBUG_ENABLE
     
+    #define LOG_MSG_MAX_LEN  256
+
     /**
-     * @brief Initialize Debug UART (UART1)
-     * @return true if successful
+     * @brief Initialize Debug UART (UART3) and Log Task/Queue
      */
     void Debug_Init(void);
+    void Log_Task_Init(void);
     
     /**
-     * @brief Print formatted debug message
-     * @param fmt Format string
-     * @param ... Arguments
+     * @brief Print formatted debug message (Sends to queue)
      */
     void Debug_Log(const char *fmt, ...);
     
-    /* Log wrapper macros - easy to expand later with levels/colors if needed */
+    /* Log wrapper macros */
     #define LOG_INFO(fmt, ...)  Debug_Log("[INFO] " fmt "\r\n", ##__VA_ARGS__)
     #define LOG_WARN(fmt, ...)  Debug_Log("[WARN] " fmt "\r\n", ##__VA_ARGS__)
     #define LOG_ERROR(fmt, ...) Debug_Log("[ERROR] " fmt "\r\n", ##__VA_ARGS__)
     #define LOG_RAW(fmt, ...)   Debug_Log(fmt, ##__VA_ARGS__)
 
 #else
-    /* Empty macros when disabled - code optimizes away */
+    /* Empty macros when disabled - code optimizes away completely */
     #define Debug_Init()        ((void)0)
+    #define Log_Task_Init()     ((void)0)
     #define Debug_Log(fmt, ...) ((void)0)
     
     #define LOG_INFO(fmt, ...)  ((void)0)

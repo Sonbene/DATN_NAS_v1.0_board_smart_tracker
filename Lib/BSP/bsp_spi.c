@@ -1,123 +1,144 @@
 #include "bsp_spi.h"
 #include <string.h>
 
-static SPI_HandleTypeDef *spi_handle;
-static SemaphoreHandle_t spi_mutex;
-static BSP_SPI_Callback_t spi_callback;
-
-void BSP_SPI_Init(SPI_HandleTypeDef *hspi)
+BSP_SPI_Status_t BSP_SPI_Bus_Init(BSP_SPI_Bus_t *bus, SPI_HandleTypeDef *hspi)
 {
-    spi_handle = hspi;
-    spi_mutex = xSemaphoreCreateMutex();
-    configASSERT(spi_mutex != NULL);
-    spi_callback = NULL;
+    if(bus == NULL || hspi == NULL) return BSP_SPI_ERROR;
+
+    bus->hspi = hspi;
+    bus->mutex = xSemaphoreCreateMutex();
+    configASSERT(bus->mutex != NULL);
+    bus->active_handle = NULL;
+
+    return BSP_SPI_OK;
 }
 
-void BSP_SPI_Select(GPIO_TypeDef *cs_port, uint16_t cs_pin)
+BSP_SPI_Status_t BSP_SPI_Handle_Init(BSP_SPI_Handle_t *handle, BSP_SPI_Bus_t *bus)
 {
-    HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_RESET);
+    if(handle == NULL || bus == NULL) return BSP_SPI_ERROR;
+
+    handle->bus = bus;
+    handle->callback = NULL;
+    handle->task_to_notify = NULL;
+
+    return BSP_SPI_OK;
 }
 
-void BSP_SPI_Deselect(GPIO_TypeDef *cs_port, uint16_t cs_pin)
+BSP_SPI_Status_t BSP_SPI_LockBus(BSP_SPI_Handle_t *handle, uint32_t timeout)
 {
-    HAL_GPIO_WritePin(cs_port, cs_pin, GPIO_PIN_SET);
-}
-
-BSP_SPI_Status_t BSP_SPI_TransmitReceive(uint8_t* tx_buf, uint8_t* rx_buf, uint16_t len, uint32_t spi_timeout, uint32_t mutex_timeout)
-{
-    if(tx_buf == NULL || rx_buf == NULL || len == 0){
-        return BSP_SPI_ERROR;
-    }
-
-    if(xSemaphoreTake(spi_mutex, pdMS_TO_TICKS(mutex_timeout)) != pdTRUE){
+    if(handle == NULL || handle->bus == NULL) return BSP_SPI_ERROR;
+    
+    if(xSemaphoreTake(handle->bus->mutex, pdMS_TO_TICKS(timeout)) != pdTRUE){
         return BSP_SPI_BUSY;
     }
-    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(spi_handle, tx_buf, rx_buf, len, spi_timeout);
-    xSemaphoreGive(spi_mutex);
+    
+    /* Mark this handle as the active one on the bus */
+    handle->bus->active_handle = handle;
+    handle->task_to_notify = xTaskGetCurrentTaskHandle();
+    
+    return BSP_SPI_OK;
+}
+
+void BSP_SPI_UnlockBus(BSP_SPI_Handle_t *handle)
+{
+    if(handle == NULL || handle->bus == NULL) return;
+    
+    handle->bus->active_handle = NULL;
+    handle->task_to_notify = NULL;
+    xSemaphoreGive(handle->bus->mutex);
+}
+
+BSP_SPI_Status_t BSP_SPI_Transmit(BSP_SPI_Handle_t *handle, uint8_t* tx_buf, uint16_t len, uint32_t timeout)
+{
+    if(handle == NULL || handle->bus == NULL || tx_buf == NULL || len == 0) return BSP_SPI_ERROR;
+    HAL_StatusTypeDef status = HAL_SPI_Transmit(handle->bus->hspi, tx_buf, len, timeout);
     return (status == HAL_OK) ? BSP_SPI_OK : BSP_SPI_ERROR;
 }
 
-BSP_SPI_Status_t BSP_SPI_TransmitReceive_IT(uint8_t* tx_buf, uint8_t* rx_buf, uint16_t len, uint32_t mutex_timeout)
+BSP_SPI_Status_t BSP_SPI_Receive(BSP_SPI_Handle_t *handle, uint8_t* rx_buf, uint16_t len, uint32_t timeout)
 {
-    if(tx_buf == NULL || rx_buf == NULL || len == 0){
-        return BSP_SPI_ERROR;
-    }
+    if(handle == NULL || handle->bus == NULL || rx_buf == NULL || len == 0) return BSP_SPI_ERROR;
+    HAL_StatusTypeDef status = HAL_SPI_Receive(handle->bus->hspi, rx_buf, len, timeout);
+    return (status == HAL_OK) ? BSP_SPI_OK : BSP_SPI_ERROR;
+}
 
-    if(xSemaphoreTake(spi_mutex, pdMS_TO_TICKS(mutex_timeout)) != pdTRUE){
-        return BSP_SPI_BUSY;
+BSP_SPI_Status_t BSP_SPI_TransmitReceive(BSP_SPI_Handle_t *handle, uint8_t* tx_buf, uint8_t* rx_buf, uint16_t len, uint32_t timeout)
+{
+    if(handle == NULL || handle->bus == NULL || tx_buf == NULL || rx_buf == NULL || len == 0) return BSP_SPI_ERROR;
+    
+    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(handle->bus->hspi, tx_buf, rx_buf, len, timeout);
+    return (status == HAL_OK) ? BSP_SPI_OK : BSP_SPI_ERROR;
+}
+
+BSP_SPI_Status_t BSP_SPI_TransmitReceive_IT(BSP_SPI_Handle_t *handle, uint8_t* tx_buf, uint8_t* rx_buf, uint16_t len)
+{
+    if(handle == NULL || handle->bus == NULL || tx_buf == NULL || rx_buf == NULL || len == 0) return BSP_SPI_ERROR;
+    
+    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive_IT(handle->bus->hspi, tx_buf, rx_buf, len);
+    return (status == HAL_OK) ? BSP_SPI_OK : BSP_SPI_ERROR;
+}
+
+BSP_SPI_Status_t BSP_SPI_TransmitReceive_DMA(BSP_SPI_Handle_t *handle, uint8_t* tx_buf, uint8_t* rx_buf, uint16_t len)
+{
+    if(handle == NULL || handle->bus == NULL || tx_buf == NULL || rx_buf == NULL || len == 0) return BSP_SPI_ERROR;
+    
+    if(HAL_SPI_GetState(handle->bus->hspi) != HAL_SPI_STATE_READY) return BSP_SPI_BUSY;
+    
+    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive_DMA(handle->bus->hspi, tx_buf, rx_buf, len);
+    return (status == HAL_OK) ? BSP_SPI_OK : BSP_SPI_ERROR;
+}
+
+BSP_SPI_Status_t BSP_SPI_WaitDone(BSP_SPI_Handle_t *handle, uint32_t timeout)
+{
+    if(handle == NULL) return BSP_SPI_ERROR;
+    
+    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(timeout)) == 0) {
+        return BSP_SPI_TIMEOUT;
     }
     
-    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive_IT(spi_handle, tx_buf, rx_buf, len);
-    if(status == HAL_OK){
-        return BSP_SPI_OK;
-    }
-    else{
-        xSemaphoreGive(spi_mutex);
-        return BSP_SPI_ERROR;
-    }
+    return BSP_SPI_OK;
 }
 
-BSP_SPI_Status_t BSP_SPI_TransmitReceive_DMA(uint8_t* tx_buf, uint8_t* rx_buf, uint16_t len, uint32_t mutex_timeout)
+void BSP_SPI_RegisterCallback(BSP_SPI_Handle_t *handle, BSP_SPI_Callback_t callback)
 {
-    if(tx_buf == NULL || rx_buf == NULL || len == 0){
-        return BSP_SPI_ERROR;
-    }
-
-    if(xSemaphoreTake(spi_mutex, pdMS_TO_TICKS(mutex_timeout)) != pdTRUE){
-        return BSP_SPI_BUSY;
-    }
-
-    if(HAL_SPI_GetState(spi_handle) != HAL_SPI_STATE_READY){
-        return BSP_SPI_BUSY;
-    }
-    
-    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive_DMA(spi_handle, tx_buf, rx_buf, len);
-    if(status == HAL_OK){
-        return BSP_SPI_OK;
-    }
-    else{
-        xSemaphoreGive(spi_mutex);
-        return BSP_SPI_ERROR;
-    }
+    if(handle != NULL) handle->callback = callback;
 }
 
-void BSP_SPI_RegisterCallback(BSP_SPI_Callback_t callback)
+void BSP_SPI_TxRxCpltCallback(BSP_SPI_Handle_t *handle)
 {
-    spi_callback = callback;
-}
-
-void BSP_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
-{
-    if(hspi == spi_handle){
+    if(handle != NULL){
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-        xSemaphoreGiveFromISR(spi_mutex, &xHigherPriorityTaskWoken);
-
-        if(spi_callback != NULL){
-            spi_callback(BSP_SPI_EVENT_DONE, &xHigherPriorityTaskWoken);
+        
+        if(handle->task_to_notify != NULL) {
+            vTaskNotifyGiveFromISR(handle->task_to_notify, &xHigherPriorityTaskWoken);
         }
 
+        if(handle->callback != NULL){
+            handle->callback(BSP_SPI_EVENT_DONE, &xHigherPriorityTaskWoken);
+        }
+        
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 }
 
-void BSP_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
+void BSP_SPI_ErrorCallback(BSP_SPI_Handle_t *handle)
 {
-    if(hspi == spi_handle){
+    if(handle != NULL){
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-        if(spi_callback != NULL){
-            spi_callback(BSP_SPI_EVENT_ERROR, &xHigherPriorityTaskWoken);
+        
+        if(handle->task_to_notify != NULL) {
+            vTaskNotifyGiveFromISR(handle->task_to_notify, &xHigherPriorityTaskWoken);
         }
 
-        xSemaphoreGiveFromISR(spi_mutex, &xHigherPriorityTaskWoken);
-
+        if(handle->callback != NULL){
+            handle->callback(BSP_SPI_EVENT_ERROR, &xHigherPriorityTaskWoken);
+        }
+        
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 }
 
-void BSP_SPI_Abort(void)
+void BSP_SPI_Abort(BSP_SPI_Handle_t *handle)
 {
-    HAL_SPI_Abort(spi_handle);
-    xSemaphoreGive(spi_mutex);
+    if(handle != NULL && handle->bus != NULL) HAL_SPI_Abort(handle->bus->hspi);
 }

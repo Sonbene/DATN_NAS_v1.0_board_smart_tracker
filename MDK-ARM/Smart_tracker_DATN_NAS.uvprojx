@@ -172,8 +172,8 @@
             <AdsLsun>1</AdsLsun>
             <AdsLven>1</AdsLven>
             <AdsLsxf>1</AdsLsxf>
-            <RvctClst>0</RvctClst>
-            <GenPPlst>0</GenPPlst>
+            <RvctClst>1</RvctClst>
+            <GenPPlst>1</GenPPlst>
             <AdsCpuType>"Cortex-M4"</AdsCpuType>
             <RvctDeviceName></RvctDeviceName>
             <mOS>0</mOS>
@@ -338,7 +338,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32L431xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Service;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Services/StorageManager;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -658,9 +658,33 @@
         </Group>
         <Group>
           <GroupName>Task</GroupName>
+          <Files>
+            <File>
+              <FileName>w25q32_task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Task\w25q32_task.h</FilePath>
+            </File>
+            <File>
+              <FileName>w25q32_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Task\w25q32_task.c</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>Driver_Custom</GroupName>
+          <Files>
+            <File>
+              <FileName>w25q32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Driver_Custom\w25q32.c</FilePath>
+            </File>
+            <File>
+              <FileName>w25q32.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Driver_Custom\w25q32.h</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>Utils</GroupName>
@@ -679,6 +703,18 @@
         </Group>
         <Group>
           <GroupName>Service</GroupName>
+          <Files>
+            <File>
+              <FileName>storage_manager.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Services\StorageManager\storage_manager.c</FilePath>
+            </File>
+            <File>
+              <FileName>storage_manager.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Services\StorageManager\storage_manager.h</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>Middlewares/FreeRTOS</GroupName>
