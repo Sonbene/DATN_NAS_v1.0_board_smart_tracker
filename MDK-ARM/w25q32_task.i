@@ -44461,7 +44461,7 @@ typedef struct {
  
 static Storage_Config_t sensor_storage_cfg = {
     .start_addr = 0x1000,        
-    .end_addr = 0x10000,         
+    .end_addr = 0x2000,         
     .tracking_addr = 0x0000,     
     .obj_size = sizeof(Sensor_Data_t),
     .magic_word = 0xCAFEBABE,
@@ -44513,30 +44513,27 @@ void StartW25Q32Task(void const * argument)
      
     Sensor_Data_t sample;
     sample.magic = 0xCAFEBABE;
-    sample.timestamp = osKernelSysTick();
     sample.temperature = 25.5f;
     sample.humidity = 60.0f;
 
-    Debug_Log("[INFO] " "Appending 12 records to see Tracking Sector update..." "\r\n");
-    for(int i = 0; i < 12; i++) {
-        sample.timestamp = osKernelSysTick();
-        sample.temperature += 0.1f;
-        Storage_Append(&flash_handle, &sensor_storage_cfg, &sensor_ctx, &sample);
-        osDelay(10);
-    }
-
-    Debug_Log("[INFO] " "New Current Index: %d" "\r\n",sensor_ctx . current_index);
-
-     
-    Sensor_Data_t read_back;
-    if (sensor_ctx.current_index > 0) {
-        Storage_Read(&flash_handle, &sensor_storage_cfg, sensor_ctx.current_index - 1, &read_back);
-        Debug_Log("[INFO] " "Last Record: Time=%d, Temp=%.1f" "\r\n",read_back . timestamp, read_back . temperature);
-    }
-
-    Debug_Log("[INFO] " "Storage Test Complete. Try resetting board to verify Recovery." "\r\n");
+    Debug_Log("[INFO] " "Starting continuous logging (every 5s)..." "\r\n");
+    Storage_Format(&flash_handle, &sensor_storage_cfg, &sensor_ctx);
 
     for(;;) {
+
+        sample.timestamp = osKernelSysTick();
+        sample.temperature += 0.1f;  
+        
+        Storage_Status_t status = Storage_Append(&flash_handle, &sensor_storage_cfg, &sensor_ctx, &sample);
+        
+        if (status == STORAGE_OK) {
+            Debug_Log("[INFO] " "Record #%d saved (Time: %d, Temp: %.1f)" "\r\n",sensor_ctx . current_index - 1, sample . timestamp, sample . temperature);
+        } else if (status == STORAGE_FULL) {
+            Debug_Log("[WARN] " "Storage is FULL!" "\r\n");
+        } else {
+            Debug_Log("[ERROR] " "Failed to write to storage!" "\r\n");
+        }
+
         osDelay(5000);
     }
 }

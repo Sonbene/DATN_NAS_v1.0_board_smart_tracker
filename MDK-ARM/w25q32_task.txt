@@ -9,21 +9,21 @@
 ;;;58     void StartW25Q32Task(void const * argument)
 000000  ed2d8b02          VPUSH    {d8}
 ;;;59     {
-000004  b088              SUB      sp,sp,#0x20
+000004  b086              SUB      sp,sp,#0x18
 ;;;60         LOG_INFO("--- Storage Manager Test Started ---");
-000006  a037              ADR      r0,|L1.228|
+000006  a033              ADR      r0,|L1.212|
 000008  f7fffffe          BL       Debug_Log
 ;;;61     
 ;;;62         /* 1. Init Flash Driver */
 ;;;63         if (W25Q_Init(&flash_handle, &flash_spi_handle, GPIOB, GPIO_PIN_6) != W25Q_OK) {
-00000c  4942              LDR      r1,|L1.280|
+00000c  493e              LDR      r1,|L1.264|
 00000e  2340              MOVS     r3,#0x40
-000010  4a40              LDR      r2,|L1.276|
+000010  4a3c              LDR      r2,|L1.260|
 000012  f101000c          ADD      r0,r1,#0xc
 000016  f7fffffe          BL       W25Q_Init
 00001a  b140              CBZ      r0,|L1.46|
 ;;;64             LOG_ERROR("W25Q32 Init Failed!");
-00001c  a03f              ADR      r0,|L1.284|
+00001c  a03b              ADR      r0,|L1.268|
 00001e  f7fffffe          BL       Debug_Log
 ;;;65             for(;;) osDelay(1000);
 000022  f44f747a          MOV      r4,#0x3e8
@@ -36,193 +36,198 @@
 ;;;67     
 ;;;68         /* 2. Init Storage Service */
 ;;;69         Storage_Init(&flash_handle, &sensor_storage_cfg, &sensor_ctx);
-00002e  4a3a              LDR      r2,|L1.280|
-000030  4942              LDR      r1,|L1.316|
+00002e  4a36              LDR      r2,|L1.264|
+000030  493e              LDR      r1,|L1.300|
 000032  3a18              SUBS     r2,r2,#0x18
 000034  f1020024          ADD      r0,r2,#0x24
 000038  f7fffffe          BL       Storage_Init
 ;;;70     
 ;;;71         /* 3. Perform Recovery (Find last record using Binary Search) */
 ;;;72         Storage_Recover(&flash_handle, &sensor_storage_cfg, &sensor_ctx);
-00003c  4a36              LDR      r2,|L1.280|
-00003e  493f              LDR      r1,|L1.316|
+00003c  4a32              LDR      r2,|L1.264|
+00003e  493b              LDR      r1,|L1.300|
 000040  3a18              SUBS     r2,r2,#0x18
 000042  f1020024          ADD      r0,r2,#0x24
 000046  f7fffffe          BL       Storage_Recover
 ;;;73     
-;;;74         /* 4. Demo Append (Simulate some sensor data) */
+;;;74         /* 4. Continuous Logging (Simulate sensor data every 5s) */
 ;;;75         Sensor_Data_t sample;
 ;;;76         sample.magic = SENSOR_MAGIC;
-00004a  483d              LDR      r0,|L1.320|
-;;;77         sample.timestamp = osKernelSysTick();
-00004c  9000              STR      r0,[sp,#0]
-00004e  f7fffffe          BL       osKernelSysTick
-;;;78         sample.temperature = 25.5f;
-000052  ed9f0a3c          VLDR     s0,|L1.324|
-000056  9001              STR      r0,[sp,#4]
-000058  ed8d0a02          VSTR     s0,[sp,#8]
-;;;79         sample.humidity = 60.0f;
-00005c  ed9f0a3a          VLDR     s0,|L1.328|
-;;;80     
-;;;81         LOG_INFO("Appending 12 records to see Tracking Sector update...");
-000060  a03a              ADR      r0,|L1.332|
-000062  ed8d0a03          VSTR     s0,[sp,#0xc]          ;79
-000066  f7fffffe          BL       Debug_Log
-;;;82         for(int i = 0; i < 12; i++) {
-00006a  2400              MOVS     r4,#0
-;;;83             sample.timestamp = osKernelSysTick();
-;;;84             sample.temperature += 0.1f;
-00006c  ed9f8a47          VLDR     s16,|L1.396|
-                  |L1.112|
-000070  f7fffffe          BL       osKernelSysTick
-000074  9001              STR      r0,[sp,#4]
-000076  ed9d0a02          VLDR     s0,[sp,#8]
-;;;85             Storage_Append(&flash_handle, &sensor_storage_cfg, &sensor_ctx, &sample);
-00007a  4a27              LDR      r2,|L1.280|
-00007c  466b              MOV      r3,sp
-00007e  ee300a08          VADD.F32 s0,s0,s16             ;84
-000082  3a18              SUBS     r2,r2,#0x18
-000084  492d              LDR      r1,|L1.316|
-000086  ed8d0a02          VSTR     s0,[sp,#8]            ;84
-00008a  f1020024          ADD      r0,r2,#0x24
-00008e  f7fffffe          BL       Storage_Append
-;;;86             osDelay(10);
-000092  200a              MOVS     r0,#0xa
-000094  f7fffffe          BL       osDelay
-000098  1c64              ADDS     r4,r4,#1
-00009a  2c0c              CMP      r4,#0xc               ;82
-00009c  dbe8              BLT      |L1.112|
-;;;87         }
-;;;88     
-;;;89         LOG_INFO("New Current Index: %d", sensor_ctx.current_index);
-00009e  4c1e              LDR      r4,|L1.280|
-0000a0  a03b              ADR      r0,|L1.400|
-0000a2  3c18              SUBS     r4,r4,#0x18
-0000a4  6821              LDR      r1,[r4,#0]  ; sensor_ctx
-0000a6  f7fffffe          BL       Debug_Log
-;;;90     
-;;;91         /* 5. Read back last written record */
-;;;92         Sensor_Data_t read_back;
-;;;93         if (sensor_ctx.current_index > 0) {
-0000aa  6822              LDR      r2,[r4,#0]  ; sensor_ctx
-0000ac  b18a              CBZ      r2,|L1.210|
-;;;94             Storage_Read(&flash_handle, &sensor_storage_cfg, sensor_ctx.current_index - 1, &read_back);
-0000ae  ab04              ADD      r3,sp,#0x10
-0000b0  4922              LDR      r1,|L1.316|
-0000b2  f1040024          ADD      r0,r4,#0x24
-0000b6  1e52              SUBS     r2,r2,#1
-0000b8  f7fffffe          BL       Storage_Read
-;;;95             LOG_INFO("Last Record: Time=%d, Temp=%.1f", read_back.timestamp, read_back.temperature);
-0000bc  9806              LDR      r0,[sp,#0x18]
-0000be  f7fffffe          BL       __aeabi_f2d
-0000c2  ec410b10          VMOV     d0,r0,r1
-0000c6  a03a              ADR      r0,|L1.432|
-0000c8  ec532b10          VMOV     r2,r3,d0
-0000cc  9905              LDR      r1,[sp,#0x14]
-0000ce  f7fffffe          BL       Debug_Log
-                  |L1.210|
-;;;96         }
+00004a  4839              LDR      r0,|L1.304|
+;;;77         sample.temperature = 25.5f;
+00004c  ed9f0a39          VLDR     s0,|L1.308|
+000050  9002              STR      r0,[sp,#8]
+000052  ed8d0a04          VSTR     s0,[sp,#0x10]
+;;;78         sample.humidity = 60.0f;
+000056  ed9f0a38          VLDR     s0,|L1.312|
+;;;79     
+;;;80         LOG_INFO("Starting continuous logging (every 5s)...");
+00005a  a038              ADR      r0,|L1.316|
+00005c  ed8d0a05          VSTR     s0,[sp,#0x14]         ;78
+000060  f7fffffe          BL       Debug_Log
+;;;81         Storage_Format(&flash_handle, &sensor_storage_cfg, &sensor_ctx);
+000064  4a28              LDR      r2,|L1.264|
+000066  4931              LDR      r1,|L1.300|
+000068  3a18              SUBS     r2,r2,#0x18
+00006a  f1020024          ADD      r0,r2,#0x24
+00006e  f7fffffe          BL       Storage_Format
+;;;82     
+;;;83         for(;;) {
+;;;84     
+;;;85             sample.timestamp = osKernelSysTick();
+;;;86             sample.temperature += 0.1f; /* Dummy variation */
+000072  ed9f8a3f          VLDR     s16,|L1.368|
+;;;87             
+;;;88             Storage_Status_t status = Storage_Append(&flash_handle, &sensor_storage_cfg, &sensor_ctx, &sample);
+;;;89             
+;;;90             if (status == STORAGE_OK) {
+;;;91                 LOG_INFO("Record #%d saved (Time: %d, Temp: %.1f)", sensor_ctx.current_index - 1, sample.timestamp, sample.temperature);
+;;;92             } else if (status == STORAGE_FULL) {
+;;;93                 LOG_WARN("Storage is FULL!");
+;;;94             } else {
+;;;95                 LOG_ERROR("Failed to write to storage!");
+;;;96             }
 ;;;97     
-;;;98         LOG_INFO("Storage Test Complete. Try resetting board to verify Recovery.");
-0000d2  4842              LDR      r0,|L1.476|
-0000d4  f7fffffe          BL       Debug_Log
-;;;99     
-;;;100        for(;;) {
-;;;101            osDelay(5000);
-0000d8  f2413488          MOV      r4,#0x1388
-                  |L1.220|
-0000dc  4620              MOV      r0,r4
-0000de  f7fffffe          BL       osDelay
-0000e2  e7fb              B        |L1.220|
-;;;102        }
-;;;103    }
+;;;98             osDelay(5000);
+000076  f2413488          MOV      r4,#0x1388
+00007a  bf00              NOP                            ;85
+                  |L1.124|
+00007c  f7fffffe          BL       osKernelSysTick
+000080  9003              STR      r0,[sp,#0xc]          ;86
+000082  ed9d0a04          VLDR     s0,[sp,#0x10]         ;86
+000086  4a20              LDR      r2,|L1.264|
+000088  ab02              ADD      r3,sp,#8              ;88
+00008a  ee300a08          VADD.F32 s0,s0,s16             ;86
+00008e  3a18              SUBS     r2,r2,#0x18           ;88
+000090  4926              LDR      r1,|L1.300|
+000092  ed8d0a04          VSTR     s0,[sp,#0x10]         ;86
+000096  f1020024          ADD      r0,r2,#0x24           ;88
+00009a  f7fffffe          BL       Storage_Append
+00009e  b148              CBZ      r0,|L1.180|
+0000a0  2802              CMP      r0,#2                 ;92
+0000a2  d015              BEQ      |L1.208|
+0000a4  a033              ADR      r0,|L1.372|
+0000a6  bf00              NOP                            ;93
+                  |L1.168|
+0000a8  f7fffffe          BL       Debug_Log
+                  |L1.172|
+0000ac  4620              MOV      r0,r4
+0000ae  f7fffffe          BL       osDelay
+;;;99         }
+0000b2  e7e3              B        |L1.124|
+                  |L1.180|
+0000b4  9804              LDR      r0,[sp,#0x10]         ;91
+0000b6  f7fffffe          BL       __aeabi_f2d
+0000ba  e9cd0100          STRD     r0,r1,[sp,#0]         ;91
+0000be  4812              LDR      r0,|L1.264|
+0000c0  9a03              LDR      r2,[sp,#0xc]          ;91
+0000c2  3818              SUBS     r0,r0,#0x18           ;91
+0000c4  6801              LDR      r1,[r0,#0]            ;91  ; sensor_ctx
+0000c6  a035              ADR      r0,|L1.412|
+0000c8  1e49              SUBS     r1,r1,#1              ;91
+0000ca  f7fffffe          BL       Debug_Log
+0000ce  e7ed              B        |L1.172|
+                  |L1.208|
+0000d0  a03f              ADR      r0,|L1.464|
+0000d2  e7e9              B        |L1.168|
+;;;100    }
                           ENDP
 
-                  |L1.228|
-0000e4  5b494e46          DCB      "[INFO] --- Storage Manager Test Started ---\r\n",0
-0000e8  4f5d202d
-0000ec  2d2d2053
-0000f0  746f7261
-0000f4  6765204d
-0000f8  616e6167
-0000fc  65722054
-000100  65737420
-000104  53746172
-000108  74656420
-00010c  2d2d2d0d
-000110  0a00    
-000112  00                DCB      0
-000113  00                DCB      0
-                  |L1.276|
+                  |L1.212|
+0000d4  5b494e46          DCB      "[INFO] --- Storage Manager Test Started ---\r\n",0
+0000d8  4f5d202d
+0000dc  2d2d2053
+0000e0  746f7261
+0000e4  6765204d
+0000e8  616e6167
+0000ec  65722054
+0000f0  65737420
+0000f4  53746172
+0000f8  74656420
+0000fc  2d2d2d0d
+000100  0a00    
+000102  00                DCB      0
+000103  00                DCB      0
+                  |L1.260|
                           DCD      0x48000400
-                  |L1.280|
+                  |L1.264|
                           DCD      ||.bss||+0x18
-                  |L1.284|
-00011c  5b455252          DCB      "[ERROR] W25Q32 Init Failed!\r\n",0
-000120  4f525d20
-000124  57323551
-000128  33322049
-00012c  6e697420
-000130  4661696c
-000134  6564210d
-000138  0a00    
-00013a  00                DCB      0
-00013b  00                DCB      0
-                  |L1.316|
+                  |L1.268|
+00010c  5b455252          DCB      "[ERROR] W25Q32 Init Failed!\r\n",0
+000110  4f525d20
+000114  57323551
+000118  33322049
+00011c  6e697420
+000120  4661696c
+000124  6564210d
+000128  0a00    
+00012a  00                DCB      0
+00012b  00                DCB      0
+                  |L1.300|
                           DCD      ||.data||+0x4
-                  |L1.320|
+                  |L1.304|
                           DCD      0xcafebabe
-                  |L1.324|
-000144  41cc0000          DCFS     0x41cc0000 ; 25.5
-                  |L1.328|
-000148  42700000          DCFS     0x42700000 ; 60
-                  |L1.332|
-00014c  5b494e46          DCB      "[INFO] Appending 12 records to see Tracking Sector upda"
-000150  4f5d2041
-000154  7070656e
-000158  64696e67
-00015c  20313220
-000160  7265636f
-000164  72647320
-000168  746f2073
-00016c  65652054
-000170  7261636b
-000174  696e6720
-000178  53656374
-00017c  6f722075
-000180  706461  
-000183  74652e2e          DCB      "te...\r\n",0
-000187  2e0d0a00
-00018b  00                DCB      0
-                  |L1.396|
-00018c  3dcccccd          DCFS     0x3dcccccd ; 0.10000000149011612
-                  |L1.400|
-000190  5b494e46          DCB      "[INFO] New Current Index: %d\r\n",0
-000194  4f5d204e
-000198  65772043
-00019c  75727265
-0001a0  6e742049
-0001a4  6e646578
-0001a8  3a202564
-0001ac  0d0a00  
-0001af  00                DCB      0
-                  |L1.432|
-0001b0  5b494e46          DCB      "[INFO] Last Record: Time=%d, Temp=%.1f\r\n",0
-0001b4  4f5d204c
-0001b8  61737420
-0001bc  5265636f
-0001c0  72643a20
-0001c4  54696d65
-0001c8  3d25642c
-0001cc  2054656d
-0001d0  703d252e
-0001d4  31660d0a
-0001d8  00      
-0001d9  00                DCB      0
-0001da  00                DCB      0
-0001db  00                DCB      0
-                  |L1.476|
-                          DCD      ||.conststring||+0xc
+                  |L1.308|
+000134  41cc0000          DCFS     0x41cc0000 ; 25.5
+                  |L1.312|
+000138  42700000          DCFS     0x42700000 ; 60
+                  |L1.316|
+00013c  5b494e46          DCB      "[INFO] Starting continuous logging (every 5s)...\r\n",0
+000140  4f5d2053
+000144  74617274
+000148  696e6720
+00014c  636f6e74
+000150  696e756f
+000154  7573206c
+000158  6f676769
+00015c  6e672028
+000160  65766572
+000164  79203573
+000168  292e2e2e
+00016c  0d0a00  
+00016f  00                DCB      0
+                  |L1.368|
+000170  3dcccccd          DCFS     0x3dcccccd ; 0.10000000149011612
+                  |L1.372|
+000174  5b455252          DCB      "[ERROR] Failed to write to storage!\r\n",0
+000178  4f525d20
+00017c  4661696c
+000180  65642074
+000184  6f207772
+000188  69746520
+00018c  746f2073
+000190  746f7261
+000194  6765210d
+000198  0a00    
+00019a  00                DCB      0
+00019b  00                DCB      0
+                  |L1.412|
+00019c  5b494e46          DCB      "[INFO] Record #%d saved (Time: %d, Temp: %.1f)\r\n",0
+0001a0  4f5d2052
+0001a4  65636f72
+0001a8  64202325
+0001ac  64207361
+0001b0  76656420
+0001b4  2854696d
+0001b8  653a2025
+0001bc  642c2054
+0001c0  656d703a
+0001c4  20252e31
+0001c8  66290d0a
+0001cc  00      
+0001cd  00                DCB      0
+0001ce  00                DCB      0
+0001cf  00                DCB      0
+                  |L1.464|
+0001d0  5b574152          DCB      "[WARN] Storage is FULL!\r\n",0
+0001d4  4e5d2053
+0001d8  746f7261
+0001dc  67652069
+0001e0  73204655
+0001e4  4c4c210d
+0001e8  0a00    
+0001ea  00                DCB      0
+0001eb  00                DCB      0
 
                           AREA ||i.W25Q32_Task_Init||, CODE, READONLY, ALIGN=2
 
@@ -307,26 +312,6 @@
 000000  77323571          DCB      "w25q32Task",0
 000004  33325461
 000008  736b00  
-00000b  00                DCB      0
-00000c  5b494e46          DCB      "[INFO] Storage Test Complete. Try resetting board to ve"
-000010  4f5d2053
-000014  746f7261
-000018  67652054
-00001c  65737420
-000020  436f6d70
-000024  6c657465
-000028  2e205472
-00002c  79207265
-000030  73657474
-000034  696e6720
-000038  626f6172
-00003c  6420746f
-000040  207665  
-000043  72696679          DCB      "rify Recovery.\r\n",0
-000047  20526563
-00004b  6f766572
-00004f  792e0d0a
-000053  00      
 
                           AREA ||.data||, DATA, ALIGN=2
 
@@ -334,7 +319,7 @@
                           DCD      0x00000000
                   sensor_storage_cfg
                           DCD      0x00001000
-                          DCD      0x00010000
+                          DCD      0x00002000
                           DCD      0x00000000
 000010  0010              DCW      0x0010
 000012  0000              DCB      0x00,0x00

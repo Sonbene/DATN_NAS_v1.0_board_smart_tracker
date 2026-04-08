@@ -5,148 +5,172 @@
                           AREA ||i.Storage_Append||, CODE, READONLY, ALIGN=2
 
                   Storage_Append PROC
-;;;87     
-;;;88     Storage_Status_t Storage_Append(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx, void *data) {
-000000  b5f8              PUSH     {r3-r7,lr}
-000002  4606              MOV      r6,r0
-;;;89         if (!ctx->is_initialized) return STORAGE_ERROR;
-000004  7a10              LDRB     r0,[r2,#8]
-000006  461f              MOV      r7,r3                 ;88
-000008  4614              MOV      r4,r2                 ;88
-00000a  460d              MOV      r5,r1                 ;88
-00000c  b1a8              CBZ      r0,|L1.58|
-00000e  e9d40100          LDRD     r0,r1,[r4,#0]         ;88
-;;;90     
-;;;91         /* Kiểm tra tràn bộ nhớ (Simple Linear for now, could be Circular) */
-;;;92         if (ctx->current_index >= ctx->total_capacity) {
-000012  4288              CMP      r0,r1
-000014  d307              BCC      |L1.38|
-;;;93             LOG_WARN("Storage: Region full! Auto-formatting...");
-000016  a017              ADR      r0,|L1.116|
-000018  f7fffffe          BL       Debug_Log
-;;;94             Storage_Format(flash, config, ctx);
-00001c  4622              MOV      r2,r4
-00001e  4629              MOV      r1,r5
-000020  4630              MOV      r0,r6
-000022  f7fffffe          BL       Storage_Format
-                  |L1.38|
-;;;95         }
-;;;96     
-;;;97         uint32_t addr = config->start_addr + ctx->current_index * config->obj_size;
-000026  6828              LDR      r0,[r5,#0]
-000028  89ab              LDRH     r3,[r5,#0xc]
-00002a  6821              LDR      r1,[r4,#0]
-;;;98         
-;;;99         /* Ghi dữ liệu thực tế (Đã xử lý Page Boundary trong W25Q_Write) */
-;;;100        if (W25Q_Write(flash, addr, (uint8_t*)data, config->obj_size) != W25Q_OK) {
-00002c  463a              MOV      r2,r7
-00002e  fb010103          MLA      r1,r1,r3,r0           ;97
-000032  4630              MOV      r0,r6
-000034  f7fffffe          BL       W25Q_Write
-000038  b108              CBZ      r0,|L1.62|
-                  |L1.58|
-;;;101            return STORAGE_ERROR;
-00003a  2001              MOVS     r0,#1
-;;;102        }
-;;;103    
-;;;104        /* Đánh dấu vào Tracking Sector nếu đến bước N */
-;;;105        ctx->current_index++;
-;;;106        if (ctx->current_index % config->n_step == 0) {
-;;;107            uint32_t mark_pos = (ctx->current_index / config->n_step) - 1;
-;;;108            if (mark_pos < 4096) {
-;;;109                uint8_t zero = 0x00;
-;;;110                W25Q_Write(flash, config->tracking_addr + mark_pos, &zero, 1);
-;;;111            }
-;;;112        }
-;;;113    
-;;;114        return STORAGE_OK;
-;;;115    }
-00003c  bdf8              POP      {r3-r7,pc}
-                  |L1.62|
-00003e  6821              LDR      r1,[r4,#0]            ;105
-000040  1c49              ADDS     r1,r1,#1              ;105
-000042  6021              STR      r1,[r4,#0]            ;106
-000044  8aa8              LDRH     r0,[r5,#0x14]         ;106
-000046  fbb1f2f0          UDIV     r2,r1,r0              ;106
-00004a  fb001212          MLS      r2,r0,r2,r1           ;106
-00004e  b97a              CBNZ     r2,|L1.112|
-000050  fbb1f0f0          UDIV     r0,r1,r0              ;107
-000054  1e40              SUBS     r0,r0,#1              ;107
-000056  f5b05f80          CMP      r0,#0x1000            ;108
-00005a  d209              BCS      |L1.112|
-00005c  2100              MOVS     r1,#0                 ;109
-00005e  f88d1000          STRB     r1,[sp,#0]            ;109
-000062  68a9              LDR      r1,[r5,#8]            ;110
-000064  2301              MOVS     r3,#1                 ;110
-000066  4401              ADD      r1,r1,r0              ;110
-000068  466a              MOV      r2,sp                 ;110
-00006a  4630              MOV      r0,r6                 ;110
-00006c  f7fffffe          BL       W25Q_Write
-                  |L1.112|
-000070  2000              MOVS     r0,#0                 ;114
-000072  bdf8              POP      {r3-r7,pc}
-;;;116    
+;;;121     */
+;;;122    Storage_Status_t Storage_Append(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx, void *data) {
+000000  e92d43f8          PUSH     {r3-r9,lr}
+000004  4680              MOV      r8,r0
+;;;123        if (!ctx->is_initialized) return STORAGE_ERROR;
+000006  7a10              LDRB     r0,[r2,#8]
+000008  461f              MOV      r7,r3                 ;122
+00000a  4614              MOV      r4,r2                 ;122
+00000c  460d              MOV      r5,r1                 ;122
+00000e  2800              CMP      r0,#0
+000010  d01a              BEQ      |L1.72|
+000012  e9d40100          LDRD     r0,r1,[r4,#0]         ;122
+;;;124    
+;;;125        /* Nếu bộ nhớ đã đầy, thực hiện xóa sạch để ghi lại từ đầu (Vòng lặp đơn giản) */
+;;;126        if (ctx->current_index >= ctx->total_capacity) {
+000016  4288              CMP      r0,r1
+000018  d307              BCC      |L1.42|
+;;;127            LOG_WARN("Storage: Region full! Auto-formatting...");
+00001a  a01a              ADR      r0,|L1.132|
+00001c  f7fffffe          BL       Debug_Log
+;;;128            Storage_Format(flash, config, ctx);
+000020  4622              MOV      r2,r4
+000022  4629              MOV      r1,r5
+000024  4640              MOV      r0,r8
+000026  f7fffffe          BL       Storage_Format
+                  |L1.42|
+;;;129        }
+;;;130    
+;;;131        /* Tính địa chỉ ghi dựa trên index hiện tại */
+;;;132        uint32_t addr = config->start_addr + ctx->current_index * config->obj_size;
+00002a  6828              LDR      r0,[r5,#0]
+00002c  89ab              LDRH     r3,[r5,#0xc]
+00002e  6821              LDR      r1,[r4,#0]
+;;;133        
+;;;134        /* Ghi dữ liệu thực vào Flash (Thư viện W25Q đã xử lý chia nhỏ theo Page 256 byte) */
+;;;135        if (W25Q_Write(flash, addr, (uint8_t*)data, config->obj_size) != W25Q_OK) {
+000030  463a              MOV      r2,r7
+000032  fb010603          MLA      r6,r1,r3,r0           ;132
+000036  4631              MOV      r1,r6
+000038  4640              MOV      r0,r8
+00003a  f7fffffe          BL       W25Q_Write
+00003e  b130              CBZ      r0,|L1.78|
+;;;136            LOG_ERROR("Storage: Flash write error at 0x%08X", addr);
+000040  4631              MOV      r1,r6
+000042  a01d              ADR      r0,|L1.184|
+000044  f7fffffe          BL       Debug_Log
+                  |L1.72|
+000048  2001              MOVS     r0,#1                 ;123
+                  |L1.74|
+;;;137            return STORAGE_ERROR;
+;;;138        }
+;;;139    
+;;;140        /* Sau mỗi n_step bản ghi, ghi một byte 0x00 vào Tracking Sector để duy trì dấu vết */
+;;;141        ctx->current_index++;
+;;;142        if (ctx->current_index % config->n_step == 0) {
+;;;143            uint32_t mark_pos = (ctx->current_index / config->n_step) - 1;
+;;;144            if (mark_pos < 4096) {
+;;;145                uint8_t zero = 0x00;
+;;;146                W25Q_Write(flash, config->tracking_addr + mark_pos, &zero, 1);
+;;;147            }
+;;;148        }
+;;;149    
+;;;150        return STORAGE_OK;
+;;;151    }
+00004a  e8bd83f8          POP      {r3-r9,pc}
+                  |L1.78|
+00004e  6820              LDR      r0,[r4,#0]            ;141
+000050  1c40              ADDS     r0,r0,#1              ;141
+000052  6020              STR      r0,[r4,#0]            ;142
+000054  8aa9              LDRH     r1,[r5,#0x14]         ;142
+000056  fbb0f2f1          UDIV     r2,r0,r1              ;142
+00005a  fb010212          MLS      r2,r1,r2,r0           ;142
+00005e  b97a              CBNZ     r2,|L1.128|
+000060  fbb0f0f1          UDIV     r0,r0,r1              ;143
+000064  1e40              SUBS     r0,r0,#1              ;143
+000066  f5b05f80          CMP      r0,#0x1000            ;144
+00006a  d209              BCS      |L1.128|
+00006c  2100              MOVS     r1,#0                 ;145
+00006e  f88d1000          STRB     r1,[sp,#0]            ;145
+000072  68a9              LDR      r1,[r5,#8]            ;146
+000074  2301              MOVS     r3,#1                 ;146
+000076  4401              ADD      r1,r1,r0              ;146
+000078  466a              MOV      r2,sp                 ;146
+00007a  4640              MOV      r0,r8                 ;146
+00007c  f7fffffe          BL       W25Q_Write
+                  |L1.128|
+000080  2000              MOVS     r0,#0                 ;150
+000082  e7e2              B        |L1.74|
+;;;152    
                           ENDP
 
-                  |L1.116|
-000074  5b574152          DCB      "[WARN] Storage: Region full! Auto-formatting...\r\n",0
-000078  4e5d2053
-00007c  746f7261
-000080  67653a20
-000084  52656769
-000088  6f6e2066
-00008c  756c6c21
-000090  20417574
-000094  6f2d666f
-000098  726d6174
-00009c  74696e67
-0000a0  2e2e2e0d
-0000a4  0a00    
-0000a6  00                DCB      0
-0000a7  00                DCB      0
+                  |L1.132|
+000084  5b574152          DCB      "[WARN] Storage: Region full! Auto-formatting...\r\n",0
+000088  4e5d2053
+00008c  746f7261
+000090  67653a20
+000094  52656769
+000098  6f6e2066
+00009c  756c6c21
+0000a0  20417574
+0000a4  6f2d666f
+0000a8  726d6174
+0000ac  74696e67
+0000b0  2e2e2e0d
+0000b4  0a00    
+0000b6  00                DCB      0
+0000b7  00                DCB      0
+                  |L1.184|
+0000b8  5b455252          DCB      "[ERROR] Storage: Flash write error at 0x%08X\r\n",0
+0000bc  4f525d20
+0000c0  53746f72
+0000c4  6167653a
+0000c8  20466c61
+0000cc  73682077
+0000d0  72697465
+0000d4  20657272
+0000d8  6f722061
+0000dc  74203078
+0000e0  25303858
+0000e4  0d0a00  
+0000e7  00                DCB      0
 
                           AREA ||i.Storage_Format||, CODE, READONLY, ALIGN=2
 
                   Storage_Format PROC
-;;;124    
-;;;125    Storage_Status_t Storage_Format(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx) {
+;;;167     */
+;;;168    Storage_Status_t Storage_Format(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx) {
 000000  e92d41f0          PUSH     {r4-r8,lr}
 000004  460d              MOV      r5,r1
 000006  4607              MOV      r7,r0
 000008  4616              MOV      r6,r2
-;;;126        LOG_INFO("Storage: Formatting region 0x%08X...", config->start_addr);
+;;;169        LOG_INFO("Storage: Formatting region 0x%08X...", config->start_addr);
 00000a  6809              LDR      r1,[r1,#0]
 00000c  a00a              ADR      r0,|L2.56|
 00000e  f7fffffe          BL       Debug_Log
-;;;127        
-;;;128        /* Xóa Tracking Sector */
-;;;129        W25Q_EraseSector(flash, config->tracking_addr);
+;;;170        
+;;;171        /* Xóa sector theo dõi (về trạng thái 0xFF) */
+;;;172        W25Q_EraseSector(flash, config->tracking_addr);
 000012  4638              MOV      r0,r7
 000014  68a9              LDR      r1,[r5,#8]
 000016  f7fffffe          BL       W25Q_EraseSector
-;;;130        
-;;;131        /* Xóa vùng dữ liệu (xóa từng sector) */
-;;;132        for (uint32_t addr = config->start_addr; addr < config->end_addr; addr += 4096) {
+;;;173        
+;;;174        /* Xóa tuần tự từng sector (4KB) trong vùng dữ liệu */
+;;;175        for (uint32_t addr = config->start_addr; addr < config->end_addr; addr += 4096) {
 00001a  682c              LDR      r4,[r5,#0]
 00001c  e005              B        |L2.42|
                   |L2.30|
-;;;133            W25Q_EraseSector(flash, addr);
+;;;176            W25Q_EraseSector(flash, addr);
 00001e  4621              MOV      r1,r4
 000020  4638              MOV      r0,r7
 000022  f7fffffe          BL       W25Q_EraseSector
 000026  f5045480          ADD      r4,r4,#0x1000
                   |L2.42|
-00002a  6868              LDR      r0,[r5,#4]            ;132
-00002c  42a0              CMP      r0,r4                 ;132
+00002a  6868              LDR      r0,[r5,#4]            ;175
+00002c  42a0              CMP      r0,r4                 ;175
 00002e  d8f6              BHI      |L2.30|
-;;;134        }
-;;;135        
-;;;136        ctx->current_index = 0;
+;;;177        }
+;;;178        
+;;;179        /* Reset lại chỉ số ghi về 0 */
+;;;180        ctx->current_index = 0;
 000030  2000              MOVS     r0,#0
 000032  6030              STR      r0,[r6,#0]
-;;;137        return STORAGE_OK;
-;;;138    }
+;;;181        return STORAGE_OK;
+;;;182    }
 000034  e8bd81f0          POP      {r4-r8,pc}
+;;;183    
                           ENDP
 
                   |L2.56|
@@ -168,79 +192,83 @@
                           AREA ||i.Storage_Init||, CODE, READONLY, ALIGN=1
 
                   Storage_Init PROC
-;;;56     
-;;;57     Storage_Status_t Storage_Init(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx) {
+;;;76      */
+;;;77     Storage_Status_t Storage_Init(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx) {
 000000  b170              CBZ      r0,|L3.32|
-;;;58         if (!flash || !config || !ctx) return STORAGE_ERROR;
+;;;78         if (!flash || !config || !ctx) return STORAGE_ERROR;
 000002  b169              CBZ      r1,|L3.32|
 000004  b162              CBZ      r2,|L3.32|
 000006  e9d13000          LDRD     r3,r0,[r1,#0]
-;;;59     
-;;;60         uint32_t byte_capacity = config->end_addr - config->start_addr;
-;;;61         ctx->total_capacity = byte_capacity / config->obj_size;
+;;;79     
+;;;80         /* Tính toán tổng số bản ghi vùng này có thể chứa */
+;;;81         uint32_t byte_capacity = config->end_addr - config->start_addr;
+;;;82         ctx->total_capacity = byte_capacity / config->obj_size;
 00000a  8989              LDRH     r1,[r1,#0xc]
-00000c  1ac0              SUBS     r0,r0,r3              ;60
+00000c  1ac0              SUBS     r0,r0,r3              ;81
 00000e  fbb0f0f1          UDIV     r0,r0,r1
-;;;62         ctx->current_index = 0;
+;;;83         
+;;;84         /* Mặc định bắt đầu từ 0, sau đó hàm Recover sẽ cập nhật lại */
+;;;85         ctx->current_index = 0;
 000012  6050              STR      r0,[r2,#4]
 000014  2000              MOVS     r0,#0
-;;;63         ctx->is_initialized = true;
+;;;86         ctx->is_initialized = true;
 000016  6010              STR      r0,[r2,#0]
 000018  2001              MOVS     r0,#1
 00001a  7210              STRB     r0,[r2,#8]
-;;;64     
-;;;65         return STORAGE_OK;
+;;;87     
+;;;88         return STORAGE_OK;
 00001c  2000              MOVS     r0,#0
-;;;66     }
+;;;89     }
 00001e  4770              BX       lr
                   |L3.32|
-000020  2001              MOVS     r0,#1                 ;58
+000020  2001              MOVS     r0,#1                 ;78
 000022  4770              BX       lr
-;;;67     
+;;;90     
                           ENDP
 
 
                           AREA ||i.Storage_Read||, CODE, READONLY, ALIGN=1
 
                   Storage_Read PROC
-;;;116    
-;;;117    Storage_Status_t Storage_Read(W25Q_Handle_t *flash, Storage_Config_t *config, uint32_t index, void *buffer) {
+;;;155     */
+;;;156    Storage_Status_t Storage_Read(W25Q_Handle_t *flash, Storage_Config_t *config, uint32_t index, void *buffer) {
 000000  b570              PUSH     {r4-r6,lr}
 000002  461c              MOV      r4,r3
-;;;118        uint32_t addr = config->start_addr + index * config->obj_size;
+;;;157        /* Tính toán địa chỉ của bản ghi cần đọc */
+;;;158        uint32_t addr = config->start_addr + index * config->obj_size;
 000004  898b              LDRH     r3,[r1,#0xc]
 000006  680d              LDR      r5,[r1,#0]
 000008  fb025103          MLA      r1,r2,r3,r5
-;;;119        if (W25Q_Read(flash, addr, (uint8_t*)buffer, config->obj_size) != W25Q_OK) {
+;;;159        if (W25Q_Read(flash, addr, (uint8_t*)buffer, config->obj_size) != W25Q_OK) {
 00000c  4622              MOV      r2,r4
 00000e  f7fffffe          BL       W25Q_Read
 000012  2800              CMP      r0,#0
 000014  d000              BEQ      |L4.24|
-;;;120            return STORAGE_ERROR;
+;;;160            return STORAGE_ERROR;
 000016  2001              MOVS     r0,#1
                   |L4.24|
-;;;121        }
-;;;122        return STORAGE_OK;
-;;;123    }
+;;;161        }
+;;;162        return STORAGE_OK;
+;;;163    }
 000018  bd70              POP      {r4-r6,pc}
-;;;124    
+;;;164    
                           ENDP
 
 
                           AREA ||i.Storage_Recover||, CODE, READONLY, ALIGN=2
 
                   Storage_Recover PROC
-;;;67     
-;;;68     Storage_Status_t Storage_Recover(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx) {
+;;;96      */
+;;;97     Storage_Status_t Storage_Recover(W25Q_Handle_t *flash, Storage_Config_t *config, Storage_Context_t *ctx) {
 000000  e92d4ff8          PUSH     {r3-r11,lr}
 000004  4683              MOV      r11,r0
-;;;69         if (!ctx->is_initialized) return STORAGE_ERROR;
+;;;98         if (!ctx->is_initialized) return STORAGE_ERROR;
 000006  7a10              LDRB     r0,[r2,#8]
-000008  4692              MOV      r10,r2                ;68
-00000a  460e              MOV      r6,r1                 ;68
+000008  4692              MOV      r10,r2                ;97
+00000a  460e              MOV      r6,r1                 ;97
 00000c  b300              CBZ      r0,|L5.80|
-;;;70     
-;;;71         LOG_INFO("Storage: Starting recovery for region 0x%08X...", config->start_addr);
+;;;99     
+;;;100        LOG_INFO("Storage: Starting recovery for region 0x%08X...", config->start_addr);
 00000e  a035              ADR      r0,|L5.228|
 000010  6831              LDR      r1,[r6,#0]
 000012  f7fffffe          BL       Debug_Log
@@ -267,23 +295,25 @@
 00004c  1c79              ADDS     r1,r7,#1
 00004e  e01c              B        |L5.138|
                   |L5.80|
-000050  2001              MOVS     r0,#1                 ;69
+000050  2001              MOVS     r0,#1                 ;98
                   |L5.82|
-;;;72     
-;;;73         /* Vòng 1: Tìm mốc thô trên Tracking Sector */
-;;;74         uint32_t marks = Find_Last_Mark(flash, config->tracking_addr);
-;;;75         
-;;;76         /* Vòng 2: Khoanh vùng nghi vấn (N_Step bản ghi) */
-;;;77         uint32_t search_start = marks * config->n_step;
-;;;78         uint32_t search_end = search_start + config->n_step - 1;
-;;;79         
-;;;80         if (search_end >= ctx->total_capacity) search_end = ctx->total_capacity - 1;
-;;;81     
-;;;82         ctx->current_index = Find_Last_Valid_Record(flash, config, search_start, search_end);
-;;;83         
-;;;84         LOG_INFO("Storage: Recovery complete. Current Index: %d", ctx->current_index);
-;;;85         return STORAGE_OK;
-;;;86     }
+;;;101    
+;;;102        /* Vòng 1: Tìm mốc thô trên Tracking Sector (Xác định trang hiện tại) */
+;;;103        uint32_t marks = Find_Last_Mark(flash, config->tracking_addr);
+;;;104        
+;;;105        /* Vòng 2: Khoanh vùng nghi vấn (trong phạm vi N_Step bản ghi kể từ dấu mốc cuối) */
+;;;106        uint32_t search_start = marks * config->n_step;
+;;;107        uint32_t search_end = search_start + config->n_step - 1;
+;;;108        
+;;;109        /* Đảm bảo không tìm kiếm vượt quá tổng dung lượng vùng nhớ */
+;;;110        if (search_end >= ctx->total_capacity) search_end = ctx->total_capacity - 1;
+;;;111    
+;;;112        /* Tìm chính xác vị trí trống tiếp theo trong vùng nghi vấn */
+;;;113        ctx->current_index = Find_Last_Valid_Record(flash, config, search_start, search_end);
+;;;114        
+;;;115        LOG_INFO("Storage: Recovery complete. Current Index: %d", ctx->current_index);
+;;;116        return STORAGE_OK;
+;;;117    }
 000052  e8bd8ff8          POP      {r3-r11,pc}
                   |L5.86|
 000056  2100              MOVS     r1,#0
@@ -310,47 +340,47 @@
 000086  dde8              BLE      |L5.90|
 000088  4649              MOV      r1,r9
                   |L5.138|
-00008a  8ab0              LDRH     r0,[r6,#0x14]         ;77
-00008c  fb00f401          MUL      r4,r0,r1              ;77
-000090  1e61              SUBS     r1,r4,#1              ;78
-000092  1845              ADDS     r5,r0,r1              ;78
-000094  f8da0004          LDR      r0,[r10,#4]           ;80
-000098  42a8              CMP      r0,r5                 ;80
+00008a  8ab0              LDRH     r0,[r6,#0x14]         ;106
+00008c  fb00f401          MUL      r4,r0,r1              ;106
+000090  1e61              SUBS     r1,r4,#1              ;107
+000092  1845              ADDS     r5,r0,r1              ;107
+000094  f8da0004          LDR      r0,[r10,#4]           ;110
+000098  42a8              CMP      r0,r5                 ;110
 00009a  d800              BHI      |L5.158|
-00009c  1e45              SUBS     r5,r0,#1              ;80
+00009c  1e45              SUBS     r5,r0,#1              ;110
                   |L5.158|
-00009e  46a0              MOV      r8,r4                 ;80
+00009e  46a0              MOV      r8,r4                 ;110
 0000a0  e016              B        |L5.208|
                   |L5.162|
-0000a2  1b28              SUBS     r0,r5,r4              ;82
-0000a4  eb0070d0          ADD      r0,r0,r0,LSR #31      ;82
-0000a8  eb040760          ADD      r7,r4,r0,ASR #1       ;82
-0000ac  89b1              LDRH     r1,[r6,#0xc]          ;82
-0000ae  6830              LDR      r0,[r6,#0]            ;82
-0000b0  2304              MOVS     r3,#4                 ;82
-0000b2  fb070101          MLA      r1,r7,r1,r0           ;82
-0000b6  466a              MOV      r2,sp                 ;82
-0000b8  4658              MOV      r0,r11                ;82
+0000a2  1b28              SUBS     r0,r5,r4              ;113
+0000a4  eb0070d0          ADD      r0,r0,r0,LSR #31      ;113
+0000a8  eb040760          ADD      r7,r4,r0,ASR #1       ;113
+0000ac  89b1              LDRH     r1,[r6,#0xc]          ;113
+0000ae  6830              LDR      r0,[r6,#0]            ;113
+0000b0  2304              MOVS     r3,#4                 ;113
+0000b2  fb070101          MLA      r1,r7,r1,r0           ;113
+0000b6  466a              MOV      r2,sp                 ;113
+0000b8  4658              MOV      r0,r11                ;113
 0000ba  f7fffffe          BL       W25Q_Read
-0000be  6930              LDR      r0,[r6,#0x10]         ;82
-0000c0  9900              LDR      r1,[sp,#0]            ;82
-0000c2  4288              CMP      r0,r1                 ;82
+0000be  6930              LDR      r0,[r6,#0x10]         ;113
+0000c0  9900              LDR      r1,[sp,#0]            ;113
+0000c2  4288              CMP      r0,r1                 ;113
 0000c4  d103              BNE      |L5.206|
-0000c6  f1070801          ADD      r8,r7,#1              ;82
-0000ca  1c7c              ADDS     r4,r7,#1              ;82
+0000c6  f1070801          ADD      r8,r7,#1              ;113
+0000ca  1c7c              ADDS     r4,r7,#1              ;113
 0000cc  e000              B        |L5.208|
                   |L5.206|
-0000ce  1e7d              SUBS     r5,r7,#1              ;82
+0000ce  1e7d              SUBS     r5,r7,#1              ;113
                   |L5.208|
-0000d0  42ac              CMP      r4,r5                 ;82
+0000d0  42ac              CMP      r4,r5                 ;113
 0000d2  dde6              BLE      |L5.162|
-0000d4  4641              MOV      r1,r8                 ;82
+0000d4  4641              MOV      r1,r8                 ;113
 0000d6  a012              ADR      r0,|L5.288|
-0000d8  f8ca8000          STR      r8,[r10,#0]           ;84
+0000d8  f8ca8000          STR      r8,[r10,#0]           ;115
 0000dc  f7fffffe          BL       Debug_Log
-0000e0  2000              MOVS     r0,#0                 ;85
+0000e0  2000              MOVS     r0,#0                 ;116
 0000e2  e7b6              B        |L5.82|
-;;;87     
+;;;118    
                           ENDP
 
                   |L5.228|

@@ -51,5 +51,8 @@ smart_tracker_datn_nas\main.o: ../Middlewares/Third_Party/FreeRTOS/Source/includ
 smart_tracker_datn_nas\main.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/semphr.h
 smart_tracker_datn_nas\main.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h
 smart_tracker_datn_nas\main.o: ../Lib/Task/w25q32_task.h
+smart_tracker_datn_nas\main.o: ../Lib/Task/icm42605_task.h
+smart_tracker_datn_nas\main.o: ../Lib/BSP/bsp_spi.h
+smart_tracker_datn_nas\main.o: ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS/cmsis_os.h
 smart_tracker_datn_nas\main.o: ../Lib/Utils/log.h
 smart_tracker_datn_nas\main.o: D:\Keil_C\ARM\ARMCC\Bin\..\include\stdbool.h

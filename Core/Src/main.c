@@ -23,6 +23,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "w25q32_task.h"
+#include "icm42605_task.h"
+#include "bsp_spi.h"
 #include "log.h"
 /* USER CODE END Includes */
 
@@ -54,7 +56,7 @@ UART_HandleTypeDef huart3;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
-
+BSP_SPI_Bus_t spi1_bus;   /* Shared SPI1 bus, dùng chung cho W25Q32 + ICM42605 */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -113,6 +115,8 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   Debug_Init();
+  BSP_SPI_Bus_Init(&spi1_bus, &hspi1);
+  LOG_INFO("[MAIN] SPI1 Bus initialized (shared: W25Q32 + ICM42605)");
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -140,6 +144,7 @@ int main(void)
   /* add threads, ... */
   Log_Task_Init();
   W25Q32_Task_Init();
+  ICM42605_Task_Init();
   /* USER CODE END RTOS_THREADS */
 
   /* Start scheduler */
@@ -450,7 +455,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_SET);
 
   /*Configure GPIO pins : PC13 PC14 */
   GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14;
@@ -484,6 +489,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */

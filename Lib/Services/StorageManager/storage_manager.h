@@ -6,6 +6,21 @@
 #include <stdbool.h>
 
 /**
+ * @brief Định nghĩa các sự kiện sau khi hoàn tất thao tác bộ nhớ
+ */
+typedef enum {
+    STORAGE_EVENT_WRITE_DONE = 0,
+    STORAGE_EVENT_READ_DONE,
+    STORAGE_EVENT_ERROR
+} Storage_Event_t;
+
+/**
+ * @brief Hàm callback để người dùng tự định nghĩa cách báo cho Task khác
+ * (Ví dụ: xTaskNotify, xSemaphoreGive, hoặc set Event Group...)
+ */
+typedef void (*Storage_Callback_t)(Storage_Event_t event, void* user_data);
+
+/**
  * @brief Cấu hình cho một vùng lưu trữ chuyên dụng
  */
 typedef struct {
@@ -15,6 +30,10 @@ typedef struct {
     uint16_t obj_size;          /* Kích thước mỗi bản ghi (Byte) */
     uint32_t magic_word;        /* Mã nhận diện bản ghi hợp lệ (4 byte đầu) */
     uint16_t n_step;            /* Sau bao nhiêu bản ghi thì ghi 1 cell 0x00 vào Tracking Sector */
+    
+    /* Hook để báo cho Task khác khi xong việc */
+    Storage_Callback_t callback; 
+    void *user_data;            /* Tham số tùy chọn truyền vào callback */
 } Storage_Config_t;
 
 /**
