@@ -26,11 +26,7 @@
 #define IMU_CS_PORT             GPIOB
 #define IMU_CS_PIN              GPIO_PIN_7
 
-/** @brief GPIO EXTI cho INT1 (WOM) - PA0/EXTI0 */
-#define IMU_INT1_PIN            GPIO_PIN_0
 
-/** @brief GPIO EXTI cho INT2 (FIFO WM) - PB9/EXTI9 */
-#define IMU_INT2_PIN            GPIO_PIN_9
 
 /* ========================================================================================
  * SECTION: Task Notification Bits
@@ -78,6 +74,9 @@ static void prv_IMU_EventHandler(IMU_EventData_t *data, void *user_data)
         LOG_ERROR("[IMU_TASK]   Peak Accel: %.1f g", data->peak_accel_g);
         LOG_ERROR("[IMU_TASK]   Peak Gyro:  %.0f dps", data->peak_gyro_dps);
         /* TODO: Ghi log GPS, gửi SOS, bật recording... */
+        // LOG_ERROR("[IMU_TASK] Dừng mọi hoạt động 5s để test...");
+        // osDelay(5000);
+        // LOG_INFO("[IMU_TASK] Task IMU đã hoạt động trở lại sau tai nạn!");
         break;
 
     default:
@@ -105,50 +104,69 @@ static void StartICM42605Task(void const *argument)
     /* ====================================================================
      * PHASE 1: Polling Test — Đọc sensor liên tục để verify hardware
      * ==================================================================== */
-    for (;;) {
-        ICM42605_Status_t ret = ICM42605_ReadAllData(&imu_handle, &data);
+    // for (;;) {
+    //     ICM42605_Status_t ret = ICM42605_ReadAllData(&imu_handle, &data);
 
-        if (ret == ICM42605_OK) {
-            LOG_INFO("[IMU_TASK] Accel: X=%.2fg Y=%.2fg Z=%.2fg",
-                     data.accel.x, data.accel.y, data.accel.z);
-            LOG_INFO("[IMU_TASK] Gyro:  X=%.1f Y=%.1f Z=%.1f dps",
-                     data.gyro.x, data.gyro.y, data.gyro.z);
-            LOG_INFO("[IMU_TASK] Temp:  %.1f C", data.temp_degC);
-            LOG_INFO("[IMU_TASK] ---");
-        } else {
-            LOG_ERROR("[IMU_TASK] ReadAllData FAILED (err=%d)", ret);
-        }
+    //     if (ret == ICM42605_OK) {
+    //         LOG_INFO("[IMU_TASK] Accel: X=%.2fg Y=%.2fg Z=%.2fg",
+    //                  data.accel.x, data.accel.y, data.accel.z);
+    //         LOG_INFO("[IMU_TASK] Gyro:  X=%.1f Y=%.1f Z=%.1f dps",
+    //                  data.gyro.x, data.gyro.y, data.gyro.z);
+    //         LOG_INFO("[IMU_TASK] Temp:  %.1f C", data.temp_degC);
+    //         LOG_INFO("[IMU_TASK] ---");
+    //     } else {
+    //         LOG_ERROR("[IMU_TASK] ReadAllData FAILED (err=%d)", ret);
+    //     }
 
-        osDelay(500);
-    }
+    //     osDelay(500);
+    // }
 
     /* ====================================================================
      * PHASE 2: Interrupt-Driven Mode (uncomment khi Phase 1 OK)
-     * ====================================================================
-     *
-     * LOG_INFO("[IMU_TASK] Switching to interrupt-driven mode...");
-     *
-     * for (;;) {
-     *     uint32_t notify_flags = 0;
-     *
-     *     // Block vô thời hạn chờ notification từ EXTI ISR
-     *     xTaskNotifyWait(0,                  // Không clear bits on entry
-     *                     0xFFFFFFFF,          // Clear tất cả bits on exit
-     *                     &notify_flags,       // Giá trị notification nhận được
-     *                     portMAX_DELAY);      // Đợi vô thời hạn
-     *
-     *     if (notify_flags & IMU_NOTIFY_INT1) {
-     *         LOG_INFO("[IMU_TASK] INT1 notification received");
-     *         IMU_Service_HandleINT1();
-     *     }
-     *
-     *     if (notify_flags & IMU_NOTIFY_INT2) {
-     *         LOG_INFO("[IMU_TASK] INT2 notification received");
-     *         IMU_Service_HandleINT2();
-     *     }
-     * }
-     *
-     */
+     * ==================================================================== */
+     
+    LOG_INFO("[IMU_TASK] Switching to interrupt-driven mode...");
+    
+    /* Dọn dẹp các cờ ngắt ngoại vi (EXTI) có thể vô tình bị kích hoạt trong lúc config sensor */
+    __HAL_GPIO_EXTI_CLEAR_IT(IMU_INT1_PIN);
+    __HAL_GPIO_EXTI_CLEAR_IT(IMU_INT2_PIN);
+    
+    /* Dọn sạch các notification có thể bị pending trước khi bắt đầu lắng nghe thực sự */
+    ulTaskNotifyTake(pdTRUE, 0);
+
+    /* ====================================================================
+     * CHỌN CHẾ ĐỘ TEST (1 = PARKED / Chống trộm, 0 = DRIVING / Tai nạn)
+     * ==================================================================== */
+    #define TEST_PHASE_3_PARKED 1
+
+    #if TEST_PHASE_3_PARKED
+        LOG_INFO("[IMU_TASK] --- BẮT ĐẦU PHASE 3: TEST CHỐNG TRỘM (PARKED MODE) ---");
+        IMU_Service_SetMode(IMU_MODE_PARKED);
+    #else
+        LOG_INFO("[IMU_TASK] --- BẮT ĐẦU PHASE 2: TEST TAI NẠN (DRIVING MODE) ---");
+        /* Cấu hình Sensor vào chế độ DRIVING để bắt đầu đẩy data vào FIFO và bắn ngắt */
+        IMU_Service_SetMode(IMU_MODE_DRIVING);
+    #endif
+
+    for (;;) {
+        uint32_t notify_flags = 0;
+    
+        // Block vô thời hạn chờ notification từ EXTI ISR
+        xTaskNotifyWait(0,                  // Không clear bits on entry
+                        0xFFFFFFFF,          // Clear tất cả bits on exit
+                        &notify_flags,       // Giá trị notification nhận được
+                        portMAX_DELAY);      // Đợi vô thời hạn
+    
+        if (notify_flags & IMU_NOTIFY_INT1) {
+            LOG_INFO("[IMU_TASK] INT1 notification received");
+            IMU_Service_HandleINT1();
+        }
+    
+        if (notify_flags & IMU_NOTIFY_INT2) {
+            LOG_INFO("[IMU_TASK] INT2 notification received");
+            IMU_Service_HandleINT2();
+        }
+    }
 }
 
 /* ========================================================================================
@@ -172,7 +190,7 @@ void ICM42605_Task_Init(void)
         return; /* Không tạo task nếu init fail */
     }
 
-    /* 3. Init IMU Service */
+    /* 3. Init IMU Service (mặc định mode PARKED) */
     IMU_Service_Init(&imu_handle, prv_IMU_EventHandler, NULL);
     LOG_INFO("[IMU_TASK] IMU Service initialized");
 
@@ -224,14 +242,3 @@ void ICM42605_Task_NotifyINT2FromISR(void)
  *
  * @param   GPIO_Pin Pin đã trigger ngắt (GPIO_PIN_0, GPIO_PIN_9, ...)
  */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    if (GPIO_Pin == IMU_INT1_PIN) {
-        /* INT1 (PA0) — Wake-on-Motion */
-        ICM42605_Task_NotifyINT1FromISR();
-    }
-    else if (GPIO_Pin == IMU_INT2_PIN) {
-        /* INT2 (PB9) — FIFO Watermark */
-        ICM42605_Task_NotifyINT2FromISR();
-    }
-}

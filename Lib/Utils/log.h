@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include "main.h"
+#include "bsp_uart.h"
 
 /* GLOBAL DEBUG ENABLE SWITCH 
  * Comment out this line to disable all debug logging code generation
@@ -15,6 +16,9 @@
 #define DEBUG_ENABLE   /* Enabled for testing RX flow */
 
 #ifdef DEBUG_ENABLE
+    
+    /* Handle UART logging an toàn */
+    extern BSP_UART_Handle_t debug_uart_handle;
     
     #define LOG_MSG_MAX_LEN  256
 

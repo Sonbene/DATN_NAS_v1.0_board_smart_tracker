@@ -338,7 +338,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32L431xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Services/StorageManager;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Lib/Services/IMU;..\Config</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Services/StorageManager;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Lib/Services/IMU;../Config</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -654,6 +654,16 @@
               <FileType>5</FileType>
               <FilePath>..\Lib\BSP\bsp_spi.h</FilePath>
             </File>
+            <File>
+              <FileName>bsp_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\BSP\bsp_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_uart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\BSP\bsp_uart.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -679,6 +689,16 @@
               <FileType>1</FileType>
               <FilePath>..\Lib\Task\icm42605_task.c</FilePath>
             </File>
+            <File>
+              <FileName>atgm336h_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Task\atgm336h_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>atgm336h_task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Task\atgm336h_task.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -703,6 +723,16 @@
               <FileName>icm42605.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Lib\Driver_Custom\icm42605.c</FilePath>
+            </File>
+            <File>
+              <FileName>atgm336h.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Driver_Custom\atgm336h.c</FilePath>
+            </File>
+            <File>
+              <FileName>atgm336h.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Driver_Custom\atgm336h.h</FilePath>
             </File>
           </Files>
         </Group>

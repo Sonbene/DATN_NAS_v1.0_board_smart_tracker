@@ -11,6 +11,12 @@
 #ifndef __ICM42605_TASK_H__
 #define __ICM42605_TASK_H__
 
+/** @brief GPIO EXTI cho INT1 (WOM) - PA0/EXTI0 */
+#define IMU_INT1_PIN            GPIO_PIN_0
+
+/** @brief GPIO EXTI cho INT2 (FIFO WM) - PB9/EXTI9 */
+#define IMU_INT2_PIN            GPIO_PIN_9
+
 #ifdef __cplusplus
 extern "C" {
 #endif

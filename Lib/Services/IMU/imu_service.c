@@ -357,9 +357,10 @@ IMU_Status_t IMU_Service_SetMode(IMU_Mode_t mode)
         /* 4. FIFO → Stream mode, Watermark = 20 records */
         ICM42605_FlushFifo(svc.imu);
         ICM42605_ConfigFifo(svc.imu, ICM42605_FIFO_MODE_STREAM);
-        ICM42605_SetFifoWatermark(svc.imu, IMU_FIFO_WATERMARK);
+        ICM42605_SetFifoWatermark(svc.imu, IMU_FIFO_WATERMARK * IMU_FIFO_RECORD_SIZE);
         ICM42605_EnableFifoThresholdInt(svc.imu, ICM42605_INT_PIN_2, true);
-        LOG_INFO("[IMU_SVC]   FIFO: Stream, WM=%d records → INT2", IMU_FIFO_WATERMARK);
+        LOG_INFO("[IMU_SVC]   FIFO: Stream, WM=%d records (%d bytes) → INT2", 
+                 IMU_FIFO_WATERMARK, IMU_FIFO_WATERMARK * IMU_FIFO_RECORD_SIZE);
 
         /* 5. Reset crash detection context */
         prv_CrashReset(&svc.crash);
@@ -421,25 +422,28 @@ void IMU_Service_HandleINT2(void)
     uint8_t status0 = 0;
     ICM42605_ReadIntStatus(svc.imu, &status0);
 
-    /* Đọc FIFO count */
+    /* Đọc FIFO count (trả về theo BYTES) */
     uint16_t fifo_count = 0;
     ICM42605_ReadFifoCount(svc.imu, &fifo_count);
 
-    if (fifo_count == 0) {
-        LOG_INFO("[IMU_SVC] INT2: FIFO empty (spurious?)");
+    if (fifo_count < IMU_FIFO_RECORD_SIZE) {
+        LOG_INFO("[IMU_SVC] INT2: FIFO count too small (%d bytes), wait for more", fifo_count);
         return;
     }
 
+    uint16_t records_in_fifo = fifo_count / IMU_FIFO_RECORD_SIZE;
+
     /* Giới hạn đọc theo buffer size */
-    uint16_t records_to_read = fifo_count;
+    uint16_t records_to_read = records_in_fifo;
     if (records_to_read > IMU_FIFO_WATERMARK) {
         records_to_read = IMU_FIFO_WATERMARK;
     }
     uint16_t bytes_to_read = records_to_read * IMU_FIFO_RECORD_SIZE;
 
-    LOG_INFO("[IMU_SVC] INT2: FIFO count=%d, reading %d records (%d bytes)",
+    LOG_INFO("[IMU_SVC] INT2: FIFO count=%d bytes, reading %d records (%d bytes)",
              fifo_count, records_to_read, bytes_to_read);
 
+    /* DMA đọc FIFO */
     /* DMA đọc FIFO */
     ICM42605_Status_t ret = ICM42605_ReadFifoDMA(svc.imu, svc.fifo_buf, bytes_to_read);
     if (ret != ICM42605_OK) {

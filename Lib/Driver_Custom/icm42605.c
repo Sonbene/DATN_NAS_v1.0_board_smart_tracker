@@ -280,15 +280,25 @@ ICM42605_Status_t ICM42605_Init(ICM42605_Handle_t *handle,
 
     /* --- Cấu hình mặc định --- */
 
-    /* Cấu hình INT pins: Push-pull, Active-high, Pulsed cho cả INT1 và INT2 */
+    /* Cấu hình INT pins: Open-Drain, Active-low, Pulsed cho cả INT1 và INT2 */
     uint8_t int_config = 0;
-    int_config |= (ICM42605_INT_PUSH_PULL  << ICM42605_INT1_DRIVE_BIT);
-    int_config |= (ICM42605_INT_ACTIVE_HIGH << ICM42605_INT1_POLARITY_BIT);
-    int_config |= (ICM42605_INT_PULSED     << ICM42605_INT1_MODE_BIT);
-    int_config |= (ICM42605_INT_PUSH_PULL  << ICM42605_INT2_DRIVE_BIT);
-    int_config |= (ICM42605_INT_ACTIVE_HIGH << ICM42605_INT2_POLARITY_BIT);
-    int_config |= (ICM42605_INT_PULSED     << ICM42605_INT2_MODE_BIT);
+    int_config |= (ICM42605_INT_OPEN_DRAIN  << ICM42605_INT1_DRIVE_BIT);
+    int_config |= (ICM42605_INT_ACTIVE_LOW  << ICM42605_INT1_POLARITY_BIT);
+    int_config |= (ICM42605_INT_PULSED      << ICM42605_INT1_MODE_BIT);
+    int_config |= (ICM42605_INT_OPEN_DRAIN  << ICM42605_INT2_DRIVE_BIT);
+    int_config |= (ICM42605_INT_ACTIVE_LOW  << ICM42605_INT2_POLARITY_BIT);
+    int_config |= (ICM42605_INT_PULSED      << ICM42605_INT2_MODE_BIT);
     prv_WriteRegister(handle, ICM42605_REG_INT_CONFIG, int_config);
+
+    /* Xóa toàn bộ routing ngắt mặc định (tránh RESET_DONE / DATA_RDY bắn ra INT1) */
+    prv_WriteRegister(handle, ICM42605_REG_INT_SOURCE0, 0x00);
+    prv_WriteRegister(handle, ICM42605_REG_INT_SOURCE1, 0x00);
+    prv_WriteRegister(handle, ICM42605_REG_INT_SOURCE3, 0x00);
+    prv_WriteRegister(handle, ICM42605_REG_INT_SOURCE4, 0x00);
+
+    /* Đọc để clear các cờ ngắt còn tồn đọng ngay sau khi boot / reset */
+    uint8_t dummy_status;
+    ICM42605_ReadIntStatus(handle, &dummy_status);
 
     /* Cấu hình Accel: ±4g, 100Hz */
     ICM42605_ConfigAccel(handle, ICM42605_ACCEL_FS_4G, ICM42605_ODR_100HZ);
@@ -780,8 +790,18 @@ ICM42605_Status_t ICM42605_ConfigFifo(ICM42605_Handle_t *handle, ICM42605_FifoMo
      * FIFO_CONFIG (0x16):
      *   [7:6] = FIFO_MODE
      */
-    return prv_ModifyRegister(handle, ICM42605_REG_FIFO_CONFIG,
-                              0xC0, (uint8_t)mode << 6);
+    ICM42605_Status_t ret = prv_ModifyRegister(handle, ICM42605_REG_FIFO_CONFIG,
+                                               0xC0, (uint8_t)mode << 6);
+    if (ret != ICM42605_OK) return ret;
+
+    /*
+     * FIFO_CONFIG1 (0x5F):
+     * Chọn dữ liệu đẩy vào FIFO. Cần Accel + Gyro + Temp + Timestamp = 16 bytes.
+     * Bit 3: TMST, Bit 2: TEMP, Bit 1: GYRO, Bit 0: ACCEL -> 0x0F
+     * Nếu tắt FIFO (Bypass) thì cũng tắt luôn routing.
+     */
+    uint8_t fifo_cfg1 = (mode == ICM42605_FIFO_MODE_BYPASS) ? 0x00 : 0x0F;
+    return prv_WriteRegister(handle, ICM42605_REG_FIFO_CONFIG1, fifo_cfg1);
 }
 
 ICM42605_Status_t ICM42605_SetFifoWatermark(ICM42605_Handle_t *handle, uint16_t watermark)
@@ -818,22 +838,21 @@ ICM42605_Status_t ICM42605_ReadFifoData(ICM42605_Handle_t *handle, uint8_t *buff
     prv_SelectBank(handle, ICM42605_BANK_0);
 
     /*
-     * FIFO data đọc qua register 0x30.
-     * Mỗi lần đọc 1 byte, IC tự pop data từ FIFO.
-     * Dùng burst read với cùng address.
-     * NOTE: Do buffer size limit trong prv_ReadRegisters, đọc theo từng chunk.
+     * Dùng burst read để đọc nhiều dữ liệu liên tục ra khỏi FIFO.
+     * Tối ưu đọc 256 byte mỗi chunk thay vì 14 byte để tránh overhead SPI CS.
      */
     uint16_t remaining = len;
     uint16_t offset = 0;
 
     while (remaining > 0) {
-        uint16_t chunk = (remaining > ICM42605_ALL_DATA_SIZE) ? ICM42605_ALL_DATA_SIZE : remaining;
+        uint16_t chunk = (remaining > 256) ? 256 : remaining;
 
-        uint8_t tx_buf[1 + ICM42605_ALL_DATA_SIZE];
-        uint8_t rx_buf[1 + ICM42605_ALL_DATA_SIZE];
+        /* Allocate 1 byte header + 256 bytes data */
+        uint8_t tx_buf[257];
+        uint8_t rx_buf[257];
 
-        memset(tx_buf, 0, chunk + 1);
         tx_buf[0] = ICM42605_REG_FIFO_DATA | ICM42605_SPI_READ_BIT;
+        memset(&tx_buf[1], 0, chunk);
 
         if (BSP_SPI_LockBus(handle->spi_handle, handle->timeout) != BSP_SPI_OK) {
             return ICM42605_BUSY;
