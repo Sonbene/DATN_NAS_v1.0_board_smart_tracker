@@ -36,9 +36,6 @@ static void prv_GpsUartCallback(BSP_UART_Event_t event, uint16_t size, BaseType_
 // static void prv_GpsRawCallback(const char *sentence);
 static void prv_GetLocalTime(const ATGM336H_Info_t *utc, ATGM336H_Info_t *local);
 
-
-
-
 /* ======================== ISR Callback ======================== */
 
 /**
@@ -117,9 +114,6 @@ static void prv_GetLocalTime(const ATGM336H_Info_t *utc, ATGM336H_Info_t *local)
 
     local->utc_hour = (uint8_t)hour;
 }
-
-
-
 
 /* ======================== GPS Task ======================== */
 
