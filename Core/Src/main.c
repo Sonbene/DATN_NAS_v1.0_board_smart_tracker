@@ -25,9 +25,11 @@
 #include "w25q32_task.h"
 #include "icm42605_task.h"
 #include "atgm336h_task.h"
+#include "sim_a7670c.h"
 #include "bsp_spi.h"
 #include "bsp_adc.h"
 #include "battery_task.h"
+#include "sim_task.h"
 #include "log.h"
 /* USER CODE END Includes */
 
@@ -58,13 +60,14 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 DMA_HandleTypeDef hdma_usart3_rx;
 DMA_HandleTypeDef hdma_usart3_tx;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
-BSP_SPI_Bus_t spi1_bus;   /* Shared SPI1 bus, dùng chung cho W25Q32 + ICM42605 */
-BSP_ADC_Handle_t battery_adc;
+BSP_SPI_Bus_t spi1_bus;   /* Shared SPI1 bus */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,18 +96,22 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    /* CH�?NG HARD FAULT: B�? qua ngắt nếu OS (FreeRTOS) chưa chính thức chạy */
+    /* CH?NG HARD FAULT: B? qua ngắt nếu OS (FreeRTOS) chưa chính thức chạy */
     if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) {
         return;
     }
 
     if (GPIO_Pin == IMU_INT1_PIN) {
         /* INT1 (PA0) — Wake-on-Motion */
-        ICM42605_Task_NotifyINT1FromISR();
+        ICM42605_Task_NotifyINT1FromISR(); 
     }
     else if (GPIO_Pin == IMU_INT2_PIN) {
         /* INT2 (PB9) — FIFO Watermark */
         ICM42605_Task_NotifyINT2FromISR();
+    }
+    else if (GPIO_Pin == GPIO_PIN_5) { 
+        /* RI (PA5) — Modem Ring Indicator */
+        SIM_Task_NotifyRIFromISR();
     }
 }
 
@@ -127,12 +134,15 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
     if (huart->Instance == USART1) {
         BSP_UART_RxEventCallback(&gps_uart_bus, Size);
     }
+    else if (huart->Instance == USART2) {
+        SIM_Task_UART_RxCallback(huart, Size);
+    }
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if (hadc->Instance == ADC1) {
-        BSP_ADC_ConvCpltCallback(&battery_adc);
+        Battery_Task_ADC_Callback(hadc);
     }
 }
 /* USER CODE END 0 */
@@ -173,10 +183,13 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   Debug_Init();
+  LOG_INFO("[MAIN] System Starting...");
+
+  /* Initialize Shared SPI1 Bus */
   BSP_SPI_Bus_Init(&spi1_bus, &hspi1);
   LOG_INFO("[MAIN] SPI1 Bus initialized (shared: W25Q32 + ICM42605)");
-  BSP_ADC_Init(&battery_adc, &hadc1, ADC_CHANNEL_6);
-  LOG_INFO("[MAIN] Battery ADC initialized on Channel 6");
+
+  /* Start Tasks & Component Inits */
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -203,10 +216,13 @@ int main(void)
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   Log_Task_Init();
-  //W25Q32_Task_Init();
-  //ICM42605_Task_Init();
+  W25Q32_Task_Init();
+  ICM42605_Task_Init();
   ATGM336H_Task_Init();
-  Battery_Task_Init();
+  Battery_Task_Init(&hadc1, ADC_CHANNEL_6);
+  SIM_Task_Init(&huart2);
+
+  LOG_INFO("[MAIN] Tasks started and components encapsulated");
   /* USER CODE END RTOS_THREADS */
 
   /* Start scheduler */
@@ -497,6 +513,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
+  /* DMA1_Channel6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
+  /* DMA1_Channel7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
   /* DMA2_Channel3_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Channel3_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel3_IRQn);
@@ -546,8 +568,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  /*Configure GPIO pins : PA0 PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -557,12 +579,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PA5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB6 PB7 */

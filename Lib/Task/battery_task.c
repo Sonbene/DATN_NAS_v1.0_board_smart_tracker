@@ -4,23 +4,32 @@
 #include "log.h"
 #include "main.h"
 
+
 /* Cấu hình pin 2S */
 #define BAT_MAX_MV          8400    /* 8.4V - 100% */
 #define BAT_MIN_MV          6400    /* 6.4V - 0% */
 #define BAT_LOW_THRESHOLD   7400    /* 7.4V - ~30% Cảnh báo */
 
-/* Handle Extern từ main.c */
-extern BSP_ADC_Handle_t battery_adc;
 
 /* Biến lưu trữ trạng thái */
 static uint32_t g_battery_mv = 0;
 static uint8_t g_battery_pct = 0;
+static BSP_ADC_Handle_t battery_adc;
 
 static void Battery_Task_Entry(void const * argument);
 
-void Battery_Task_Init(void) {
+void Battery_Task_Init(ADC_HandleTypeDef *hadc, uint32_t channel) {
+    /* Khởi tạo BSP ADC ngay trong task layer */
+    BSP_ADC_Init(&battery_adc, hadc, channel);
+    LOG_INFO("[BAT] Battery ADC initialized (Channel: %lu)", (unsigned long)channel);
+
     osThreadDef(BatteryTask, Battery_Task_Entry, osPriorityBelowNormal, 0, 256);
     osThreadCreate(osThread(BatteryTask), NULL);
+}
+
+
+void Battery_Task_ADC_Callback(ADC_HandleTypeDef* hadc) {
+    BSP_ADC_ConvCpltCallback(&battery_adc);
 }
 
 uint32_t Battery_GetVoltage(void) {

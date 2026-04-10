@@ -20,7 +20,8 @@
     /* Handle UART logging an toàn */
     extern BSP_UART_Handle_t debug_uart_handle;
     
-    #define LOG_MSG_MAX_LEN  256
+    #define LOG_MSG_MAX_LEN  512
+    #define LOG_ENABLE_SYS_MONITOR 1
 
     /**
      * @brief Initialize Debug UART (UART3) and Log Task/Queue
@@ -32,6 +33,11 @@
      * @brief Print formatted debug message (Sends to queue)
      */
     void Debug_Log(const char *fmt, ...);
+
+    /**
+     * @brief In bảng thống kê tài nguyên hệ thống (Task, Heap, CPU)
+     */
+    void Log_PrintSystemStats(void);
     
     /* Log wrapper macros */
     #define LOG_INFO(fmt, ...)  Debug_Log("[INFO] " fmt "\r\n", ##__VA_ARGS__)

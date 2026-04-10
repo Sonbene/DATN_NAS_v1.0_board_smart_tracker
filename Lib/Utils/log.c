@@ -13,7 +13,7 @@ extern UART_HandleTypeDef huart3;
 
 /* Config */
 #define DEBUG_UART      &huart3
-#define LOG_QUEUE_LEN   20
+#define LOG_QUEUE_LEN   30
 
 BSP_UART_Handle_t debug_uart_handle;
 
@@ -57,49 +57,82 @@ void Debug_Log(const char *fmt, ...)
 
     if (len <= 0) return;
 
-    /* 
-     * If scheduler is not running yet, or queue is not initialized,
-     * send directly to UART (blocking) so we don't lose early boot logs.
-     */
     if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING || xLogQueue == NULL) {
-        /* Before OS starts, Mutex and TaskNotify are not available. Use polling. */
         BSP_UART_Transmit(&debug_uart_handle, (uint8_t*)item.msg, len, 100);
     } else {
-        /* Push to queue - non-blocking */
-        xQueueSend(xLogQueue, &item, 0);
+        if ((SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0) {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            xQueueSendFromISR(xLogQueue, &item, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        } else {
+            xQueueSend(xLogQueue, &item, 0);
+        }
     }
 }
 
 void StartLogTask(void const * argument)
 {
     LogMsg_t item;
-    
     while(1) {
-        /* Wait forever for a message in the queue */
         if (xQueueReceive(xLogQueue, &item, portMAX_DELAY) == pdPASS) {
             uint16_t len = strlen(item.msg);
-            
-            /* Lock the TX path -> only one task can send at a time */
             if (BSP_UART_LockTx(&debug_uart_handle, portMAX_DELAY) == BSP_UART_OK) {
-                
-                /* 
-                 * Attempt to use DMA to free up CPU. 
-                 * If DMA fails to start (e.g. DMA is not configured in CubeMX), fallback to Polling. 
-                 * WARNING: If DMA is configured but NVIC Interrupt for DMA is NOT enabled, it will timeout here!
-                 */
                 if (debug_uart_handle.huart->hdmatx != NULL && 
                     BSP_UART_Transmit_DMA(&debug_uart_handle, (uint8_t*)item.msg, len) == BSP_UART_OK) {
-                    /* Sleep and wait for DMA to finish (CPU usage = 0%) */
                     BSP_UART_WaitTxDone(&debug_uart_handle, 1000);
                 } else {
-                    /* Fallback to blocking polling method */
                     BSP_UART_Transmit(&debug_uart_handle, (uint8_t*)item.msg, len, 1000);
                 }
-                
                 BSP_UART_UnlockTx(&debug_uart_handle);
             }
         }
     }
+}
+
+/* ========================================================================================
+ * SECTION: Run-Time Stats Timer (Using HAL Tick)
+ * ======================================================================================== */
+
+void configureTimerForRunTimeStats(void) {
+    /* Không cần timer phần cứng riêng, dùng SysTick của HAL */
+}
+
+unsigned long getRunTimeCounterValue(void) {
+    /* Trả về đơn vị 0.1ms (100us) để có độ phân giải tốt hơn Tick chuẩn (1ms) */
+    return HAL_GetTick() * 10;
+}
+
+/* ========================================================================================
+ * SECTION: System Monitor Implementation
+ * ======================================================================================== */
+
+void Log_PrintSystemStats(void) {
+#if LOG_ENABLE_SYS_MONITOR
+    static char stats_buffer[1024];
+
+    LOG_INFO("--- [SYSTEM MONITOR] ---");
+    LOG_INFO("Task Name       Stat  Prio  Stack   ID");
+    LOG_INFO("--------------------------------------");
+    vTaskList(stats_buffer);
+    
+    /* Căn chỉnh bảng: Thay mỗi Tab bằng 2 space và thêm padding */
+    for(int i=0; i<1024 && stats_buffer[i] != '\0'; i++) {
+        if(stats_buffer[i] == '\t') stats_buffer[i] = ' ';
+    }
+    LOG_INFO("\n%s", stats_buffer);
+
+    LOG_INFO("--- [CPU USAGE] ---");
+    vTaskGetRunTimeStats(stats_buffer);
+    for(int i=0; i<1024 && stats_buffer[i] != '\0'; i++) {
+        if(stats_buffer[i] == '\t') stats_buffer[i] = ' ';
+    }
+    LOG_INFO("\n%s", stats_buffer);
+
+    LOG_INFO("--- [MEMORY] ---");
+    LOG_INFO("Heap Free: %d bytes", (int)xPortGetFreeHeapSize());
+    LOG_INFO("Heap Min Free: %d bytes", (int)xPortGetMinimumEverFreeHeapSize());
+    LOG_INFO("--------------------------------------");
+#endif
 }
 
 #endif /* DEBUG_ENABLE */

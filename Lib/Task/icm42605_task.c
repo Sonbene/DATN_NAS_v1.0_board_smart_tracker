@@ -62,12 +62,24 @@ extern BSP_SPI_Bus_t spi1_bus;
 static void prv_IMU_EventHandler(IMU_EventData_t *data, void *user_data)
 {
     (void)user_data;
+    static uint32_t last_wom_tick = 0;
 
     switch (data->event) {
-    case IMU_EVENT_WOM_DETECTED:
-        LOG_WARN("[IMU_TASK] === ANTI-THEFT ALERT! Vehicle moved! ===");
-        /* TODO: Bật còi, gửi SMS/MQTT, bật GPS tracking... */
-        break;
+    case IMU_EVENT_WOM_DETECTED: {
+        uint32_t now = xTaskGetTickCount();
+        /* Nếu last_wom_tick = 0 (vừa reset), khởi tạo nó và bỏ qua lần báo đầu tiên để tránh nhiễu khi init */
+        if (last_wom_tick == 0) {
+            last_wom_tick = now;
+            break;
+        }
+
+        /* Giới hạn tần suất báo ăn cắp: tối đa 1 lần mỗi giây */
+        if ((now - last_wom_tick) >= pdMS_TO_TICKS(1000)) {
+            LOG_WARN("[IMU_TASK] === ANTI-THEFT ALERT! Vehicle moved! ===");
+            /* TODO: Bật còi, gửi SMS/MQTT, bật GPS tracking... */
+            last_wom_tick = now;
+        }
+    } break;
 
     case IMU_EVENT_CRASH_DETECTED:
         LOG_ERROR("[IMU_TASK] === CRASH DETECTED! Severity=%d ===", data->severity);
@@ -99,7 +111,7 @@ static void StartICM42605Task(void const *argument)
 
     LOG_INFO("[IMU_TASK] Task started — Phase 1: Polling test");
 
-    ICM42605_AllData_t data;
+    //ICM42605_AllData_t data;
 
     /* ====================================================================
      * PHASE 1: Polling Test — Đọc sensor liên tục để verify hardware

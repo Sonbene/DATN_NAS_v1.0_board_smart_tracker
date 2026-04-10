@@ -12,7 +12,7 @@
 
 #define GPS_RX_BUF_SIZE         256     /**< Kích thước buffer DMA cho UART RX */
 #define GPS_LISTEN_WINDOW_MS    1100    /**< Cửa sổ lắng nghe NMEA mỗi chu kỳ (GPS output 1Hz → 1.1s đủ bắt 1 burst) */
-#define GPS_CYCLE_PERIOD_MS     5000    /**< Chu kỳ đọc GPS tổng thể (5 giây) */
+#define GPS_CYCLE_PERIOD_MS     30000    /**< Chu kỳ đọc GPS tổng thể (5 giây) */
 #define GPS_TIMEZONE_OFFSET     7       /**< Múi giờ Việt Nam (UTC+7) */
 
 

@@ -51,7 +51,7 @@
 
 /** @defgroup WOMConfig Wake-on-Motion Config */
 /** @{ */
-#define IMU_WOM_THRESHOLD_LSB           25      /**< WOM threshold ~100mg (@±4g, 4mg/LSB) */
+#define IMU_WOM_THRESHOLD_LSB           15     /**< WOM threshold ~48mg (@±4g, 4mg/LSB) - More sensitive */
 /** @} */
 
 /* ========================================================================================

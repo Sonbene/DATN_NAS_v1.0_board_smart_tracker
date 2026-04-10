@@ -781,7 +781,6 @@ ICM42605_Status_t ICM42605_RegisterINT2Callback(ICM42605_Handle_t *handle, ICM42
 /* ========================================================================================
  * SECTION: Public API - FIFO
  * ======================================================================================== */
-
 ICM42605_Status_t ICM42605_ConfigFifo(ICM42605_Handle_t *handle, ICM42605_FifoMode_t mode)
 {
     prv_SelectBank(handle, ICM42605_BANK_0);

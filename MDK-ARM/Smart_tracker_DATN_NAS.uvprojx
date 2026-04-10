@@ -338,7 +338,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32L431xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Services/StorageManager;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Lib/Services/IMU;../Config</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Services/StorageManager;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Lib/Services/IMU;../Config;../Lib/Services/Modem</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -719,6 +719,16 @@
               <FileType>5</FileType>
               <FilePath>..\Lib\Task\battery_task.h</FilePath>
             </File>
+            <File>
+              <FileName>sim_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Task\sim_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>sim_task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Task\sim_task.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -754,6 +764,16 @@
               <FileType>5</FileType>
               <FilePath>..\Lib\Driver_Custom\atgm336h.h</FilePath>
             </File>
+            <File>
+              <FileName>sim_a7670c.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Driver_Custom\sim_a7670c.c</FilePath>
+            </File>
+            <File>
+              <FileName>sim_a7670c.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Driver_Custom\sim_a7670c.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -768,6 +788,16 @@
               <FileName>log.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Lib\Utils\log.c</FilePath>
+            </File>
+            <File>
+              <FileName>ring_buffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Utils\ring_buffer.c</FilePath>
+            </File>
+            <File>
+              <FileName>ring_buffer.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Utils\ring_buffer.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -788,6 +818,26 @@
               <FileName>imu_service.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Lib\Services\IMU\imu_service.c</FilePath>
+            </File>
+            <File>
+              <FileName>mqtt_service.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Services\Modem\mqtt_service.c</FilePath>
+            </File>
+            <File>
+              <FileName>mqtt_service.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Services\Modem\mqtt_service.h</FilePath>
+            </File>
+            <File>
+              <FileName>sms_service.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Services\Modem\sms_service.c</FilePath>
+            </File>
+            <File>
+              <FileName>sms_service.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Services\Modem\sms_service.h</FilePath>
             </File>
           </Files>
         </Group>

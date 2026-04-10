@@ -331,6 +331,12 @@ IMU_Status_t IMU_Service_SetMode(IMU_Mode_t mode)
         };
         ICM42605_ConfigWom(svc.imu, &wom, ICM42605_SMD_WOM_SHORT);
         ICM42605_EnableWomInt(svc.imu, ICM42605_INT_PIN_1, true);
+        
+        /* 5. Quan trọng: Đọc sạch cờ ngắt để đưa chân INT về mức thấp sau khi cấu hình */
+        uint8_t dummy;
+        ICM42605_ReadIntStatus(svc.imu, &dummy);
+        ICM42605_ReadIntStatus2(svc.imu, &dummy);
+        
         LOG_INFO("[IMU_SVC]   WOM: Enabled, Threshold=%d LSB (~%dmg) → INT1",
                  IMU_WOM_THRESHOLD_LSB, IMU_WOM_THRESHOLD_LSB * 4);
 
