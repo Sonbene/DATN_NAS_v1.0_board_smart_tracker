@@ -17,6 +17,7 @@
 #include "log.h"
 #include "cmsis_os.h"
 #include "main.h"
+#include "system_service.h"
 
 /* ========================================================================================
  * SECTION: Configuration — Chân kết nối phần cứng
@@ -67,28 +68,22 @@ static void prv_IMU_EventHandler(IMU_EventData_t *data, void *user_data)
     switch (data->event) {
     case IMU_EVENT_WOM_DETECTED: {
         uint32_t now = xTaskGetTickCount();
-        /* Nếu last_wom_tick = 0 (vừa reset), khởi tạo nó và bỏ qua lần báo đầu tiên để tránh nhiễu khi init */
-        if (last_wom_tick == 0) {
-            last_wom_tick = now;
-            break;
-        }
-
+        
         /* Giới hạn tần suất báo ăn cắp: tối đa 1 lần mỗi giây */
-        if ((now - last_wom_tick) >= pdMS_TO_TICKS(1000)) {
+        if (last_wom_tick == 0 || (now - last_wom_tick) >= pdMS_TO_TICKS(1000)) {
             LOG_WARN("[IMU_TASK] === ANTI-THEFT ALERT! Vehicle moved! ===");
-            /* TODO: Bật còi, gửi SMS/MQTT, bật GPS tracking... */
+            
+            System_Service_UpdateMotion(true);
+            System_Service_SetAlert(ALERT_THEFT, SEVERITY_MEDIUM);
+            
             last_wom_tick = now;
         }
     } break;
 
     case IMU_EVENT_CRASH_DETECTED:
         LOG_ERROR("[IMU_TASK] === CRASH DETECTED! Severity=%d ===", data->severity);
-        LOG_ERROR("[IMU_TASK]   Peak Accel: %.1f g", data->peak_accel_g);
-        LOG_ERROR("[IMU_TASK]   Peak Gyro:  %.0f dps", data->peak_gyro_dps);
-        /* TODO: Ghi log GPS, gửi SOS, bật recording... */
-        // LOG_ERROR("[IMU_TASK] Dừng mọi hoạt động 5s để test...");
-        // osDelay(5000);
-        // LOG_INFO("[IMU_TASK] Task IMU đã hoạt động trở lại sau tai nạn!");
+        System_Service_UpdateMotion(true); /* Coi va chạm là một chuyển động để reset timer */
+        System_Service_SetAlert(ALERT_CRASH, (Severity_t)data->severity);
         break;
 
     default:
@@ -108,36 +103,7 @@ static void prv_IMU_EventHandler(IMU_EventData_t *data, void *user_data)
 static void StartICM42605Task(void const *argument)
 {
     (void)argument;
-
-    LOG_INFO("[IMU_TASK] Task started — Phase 1: Polling test");
-
-    //ICM42605_AllData_t data;
-
-    /* ====================================================================
-     * PHASE 1: Polling Test — Đọc sensor liên tục để verify hardware
-     * ==================================================================== */
-    // for (;;) {
-    //     ICM42605_Status_t ret = ICM42605_ReadAllData(&imu_handle, &data);
-
-    //     if (ret == ICM42605_OK) {
-    //         LOG_INFO("[IMU_TASK] Accel: X=%.2fg Y=%.2fg Z=%.2fg",
-    //                  data.accel.x, data.accel.y, data.accel.z);
-    //         LOG_INFO("[IMU_TASK] Gyro:  X=%.1f Y=%.1f Z=%.1f dps",
-    //                  data.gyro.x, data.gyro.y, data.gyro.z);
-    //         LOG_INFO("[IMU_TASK] Temp:  %.1f C", data.temp_degC);
-    //         LOG_INFO("[IMU_TASK] ---");
-    //     } else {
-    //         LOG_ERROR("[IMU_TASK] ReadAllData FAILED (err=%d)", ret);
-    //     }
-
-    //     osDelay(500);
-    // }
-
-    /* ====================================================================
-     * PHASE 2: Interrupt-Driven Mode (uncomment khi Phase 1 OK)
-     * ==================================================================== */
-     
-    LOG_INFO("[IMU_TASK] Switching to interrupt-driven mode...");
+    LOG_INFO("[IMU_TASK] Task started — Interrupt mode");
     
     /* Dọn dẹp các cờ ngắt ngoại vi (EXTI) có thể vô tình bị kích hoạt trong lúc config sensor */
     __HAL_GPIO_EXTI_CLEAR_IT(IMU_INT1_PIN);
@@ -149,7 +115,7 @@ static void StartICM42605Task(void const *argument)
     /* ====================================================================
      * CHỌN CHẾ ĐỘ TEST (1 = PARKED / Chống trộm, 0 = DRIVING / Tai nạn)
      * ==================================================================== */
-    #define TEST_PHASE_3_PARKED 1
+    #define TEST_PHASE_3_PARKED 0
 
     #if TEST_PHASE_3_PARKED
         LOG_INFO("[IMU_TASK] --- BẮT ĐẦU PHASE 3: TEST CHỐNG TRỘM (PARKED MODE) ---");
@@ -170,12 +136,12 @@ static void StartICM42605Task(void const *argument)
                         portMAX_DELAY);      // Đợi vô thời hạn
     
         if (notify_flags & IMU_NOTIFY_INT1) {
-            LOG_INFO("[IMU_TASK] INT1 notification received");
+            // LOG_INFO("[IMU_TASK] INT1 notification received");
             IMU_Service_HandleINT1();
         }
     
         if (notify_flags & IMU_NOTIFY_INT2) {
-            LOG_INFO("[IMU_TASK] INT2 notification received");
+            // LOG_INFO("[IMU_TASK] INT2 notification received");
             IMU_Service_HandleINT2();
         }
     }

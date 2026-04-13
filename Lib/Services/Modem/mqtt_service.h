@@ -40,10 +40,47 @@ typedef struct {
 
 typedef void (*MQTT_DataCallback_t)(MQTT_Message_t *msg);
 
+#include "cmsis_os.h"
+
+/**
+ * @brief Cấu trúc tin nhắn gửi qua Mail Queue (Bất đồng bộ)
+ */
+typedef struct {
+    char topic[64];      /**< Topic đầy đủ (vd: Son/IMEI/data) */
+    char payload[160];   /**< Nội dung JSON */
+} MQTT_Mail_t;
+
 /**
  * @brief Cấu hình SSL và tham số MQTT
  */
 MQTT_Status_t MQTT_Service_Init(SIM_Handle_t *sim, const MQTT_Config_t *config);
+
+/**
+ * @brief Thiết lập ID định danh (IMEI) để tự động tạo topic
+ */
+void MQTT_Service_SetDeviceID(const char *imei);
+
+/**
+ * @brief Gửi yêu cầu Publish MQTT vào hàng đợi
+ * @param type: Loại dữ liệu (vd: "data", "alarm", "crash")
+ * @param json_payload: Chuỗi JSON
+ */
+void MQTT_Service_QueuePublish(const char *type, const char *json_payload);
+
+/**
+ * @brief Lấy tin nhắn tiếp theo từ hàng đợi (Dùng cho SIM Task)
+ */
+osEvent MQTT_Service_GetMail(uint32_t timeout_ms);
+
+/**
+ * @brief Kiểm tra xem hàng đợi MQTT có đang trống không
+ */
+bool MQTT_Service_IsQueueEmpty(void);
+
+/**
+ * @brief Giải phóng bộ nhớ của Mail sau khi xử lý xong
+ */
+void MQTT_Service_FreeMail(void *mail_ptr);
 
 /**
  * @brief Kết nối tới Broker (HiveMQ Cloud)
@@ -68,6 +105,13 @@ MQTT_Status_t MQTT_Service_Subscribe(SIM_Handle_t *sim, const char *topic, MQTT_
 /**
  * @brief Hàm xử lý khi có dữ liệu MQTT đổ từ Driver về
  */
+MQTT_Status_t MQTT_Service_IsConnected(SIM_Handle_t *sim);
 void MQTT_Service_HandleURC(SIM_Handle_t *sim, char *line);
+
+/**
+ * @brief Kiểm tra xem MQTT có đang bận thực hiện lệnh mạng không
+ * @return true nếu đang rảnh (không bận kết nối/gửi)
+ */
+bool MQTT_Service_IsStable(void);
 
 #endif /* __MQTT_SERVICE_H__ */

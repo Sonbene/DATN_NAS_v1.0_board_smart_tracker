@@ -62,15 +62,14 @@ void SMS_Service_HandleURC(SIM_Handle_t *sim, char *line) {
             int index = atoi(p + 1);
             LOG_INFO("[SMS] New SMS at index %d. Reading...", index);
             
-            char content[160];
-            if (SIM_ReadSMS(sim, index, content, sizeof(content)) == SIM_OK) {
-                LOG_INFO("[SMS] Content: %s", content);
+            SMS_Message_t msg;
+            memset(&msg, 0, sizeof(msg));
+            
+            if (SIM_ReadSMS(sim, index, msg.phone, msg.timestamp, msg.content, sizeof(msg.content)) == SIM_OK) {
+                LOG_INFO("[SMS] From: %s, Time: %s", msg.phone, msg.timestamp);
+                LOG_INFO("[SMS] Content: %s", msg.content);
                 
                 if (g_sms_cb) {
-                    SMS_Message_t msg;
-                    memset(&msg, 0, sizeof(msg));
-                    strncpy(msg.content, content, sizeof(msg.content) - 1);
-                    /* Lưu ý: Parse thêm SĐT từ +CMGR nếu cần, ở đây tạm thời chỉ có nội dung */
                     g_sms_cb(&msg);
                 }
                 

@@ -1,22 +1,14 @@
-/**
- * @file    w25q32_task.h
- * @brief   Task for testing W25Q32 SPI Flash
- */
+#ifndef W25Q32_TASK_H
+#define W25Q32_TASK_H
 
-#ifndef __W25Q32_TASK_H__
-#define __W25Q32_TASK_H__
+#include "main.h"
+#include "system_service.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/**
- * @brief Initialize and start the W25Q32 test task
- */
 void W25Q32_Task_Init(void);
 
-#ifdef __cplusplus
-}
-#endif
+/**
+ * @brief Gửi yêu cầu lưu log vào Flash
+ */
+void W25Q32_Task_Log(TrackerLog_t *log);
 
-#endif /* __W25Q32_TASK_H__ */
+#endif

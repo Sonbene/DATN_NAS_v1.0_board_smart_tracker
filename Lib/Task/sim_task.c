@@ -7,8 +7,11 @@
 #include "sms_service.h"
 #include "secrets.h"
 #include "log.h"
+#include "system_service.h"
+#include "w25q32_task.h"
 #include <string.h>
 #include <stdio.h>
+#include "system_service.h"
 
 /* State Machine */
 typedef enum {
@@ -27,11 +30,16 @@ SIM_Handle_t sim_modem;
 static uint8_t sim_rx_dma_buf[512];
 static uint16_t sim_last_dma_pos = 0;
 static osThreadId g_sim_task_id = NULL;
+static volatile bool g_sim_task_busy = false;
+static volatile bool g_modem_needs_init = false;
+
+static char g_sim_imei[20] = "UNKNOWN";
 
 #define SIM_SIG_RI    (1 << 0)
 
 static void SIM_Task_Entry(void const * argument);
 static void SIM_Event_Callback(SIM_Message_t *msg);
+static void prv_SMS_ReceivedCallback(SMS_Message_t *msg);
 
 void SIM_Task_Init(UART_HandleTypeDef *huart) {
     /* 1. Khởi tạo BSP và Driver ngay tại đây */
@@ -45,13 +53,29 @@ void SIM_Task_Init(UART_HandleTypeDef *huart) {
     LOG_INFO("[SIM TASK] Handles initialized. Circular DMA started.");
 
     /* 3. Tạo Task */
-    osThreadDef(SIMTask, SIM_Task_Entry, osPriorityAboveNormal, 0, 512);
+    osThreadDef(SIMTask, SIM_Task_Entry, osPriorityAboveNormal, 0, 768); 
     g_sim_task_id = osThreadCreate(osThread(SIMTask), NULL);
 }
 
 void SIM_Task_NotifyRIFromISR(void) {
     if (g_sim_task_id != NULL) {
         osSignalSet(g_sim_task_id, SIM_SIG_RI);
+    }
+}
+
+void SIM_Task_RestoreUART(void) {
+    if (sim_uart_bus.huart != NULL) {
+        /* 1. Reset ngoại vi (Lưu ý: Không gọi DeInit để tránh treo HAL) */
+        HAL_UART_Init(sim_uart_bus.huart);
+        
+        /* 2. Khởi động lại DMA RX */
+        sim_last_dma_pos = 0;
+        HAL_UARTEx_ReceiveToIdle_DMA(sim_uart_bus.huart, sim_rx_dma_buf, 512);
+        __HAL_DMA_DISABLE_IT(sim_uart_bus.huart->hdmarx, DMA_IT_HT);
+        
+        /* 3. Bật lại các ngắt cần thiết */
+        __HAL_UART_ENABLE_IT(sim_uart_bus.huart, UART_IT_IDLE);
+        __HAL_UART_ENABLE_IT(sim_uart_bus.huart, UART_IT_RXNE);
     }
 }
 
@@ -87,54 +111,77 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 }
 
 static void SIM_Event_Callback(SIM_Message_t *msg) {
-    if (msg->event == SIM_EVENT_MQTT_MSG) {
-        LOG_INFO("[SIM TASK] MQTT Message Received via URC");
+    if (msg == NULL) return;
+    
+    switch (msg->event) {
+        case SIM_EVENT_MQTT_MSG:
         MQTT_Service_HandleURC(&sim_modem, (char*)msg->data);
-    } else if (msg->event == SIM_EVENT_SMS_MSG) {
-        LOG_INFO("[SIM TASK] SMS Event Received via URC");
+            break;
+        case SIM_EVENT_SMS_MSG:
         SMS_Service_HandleURC(&sim_modem, (char*)msg->data);
+            break;
+        case SIM_EVENT_NET_READY:
+            LOG_INFO("[SIM TASK] Network registered!");
+            break;
+        case SIM_EVENT_NET_LOST:
+            LOG_WARN("[SIM TASK] Network lost!");
+            break;
+        case SIM_EVENT_MODEM_RESET:
+            LOG_WARN("[SIM TASK] Modem reset detected! Restarting sequence...");
+            g_modem_needs_init = true;
+            if (g_sim_task_id != NULL) {
+                osSignalSet(g_sim_task_id, SIM_SIG_RI);
+            }
+            break;
+        default: break;
     }
 }
 
-/* ========================================================================== *
- * State Handlers
- * ========================================================================== */
 static SIM_State_t SIM_Handle_PowerOn(void) {
-    SIM_PowerOn(&sim_modem);
-    return SIM_ST_CHECK_COMM;
+    LOG_INFO("[SIM] Executing MANDATORY Power-On/Reset Sequence...");
+    
+    g_sim_task_busy = true;
+    SIM_HardReset(&sim_modem);
+    osDelay(5000); // Tăng lên 5s cho module boot hoàn toàn
+    
+    if (SIM_TestAlive(&sim_modem) == SIM_OK) {
+        LOG_INFO("[SIM TASK] Module responding!");
+        g_sim_task_busy = false;
+        return SIM_ST_CHECK_COMM;
+    }
+    
+    LOG_ERROR("[SIM TASK] Module NOT responding after reset!");
+    g_sim_task_busy = false;
+    return SIM_ST_POWER_ON;
 }
 
 static SIM_State_t SIM_Handle_CheckComm(void) {
-    if (SIM_SendATCommand(&sim_modem, "AT\r\n", "OK", 1000) == SIM_OK) {
-        LOG_INFO("[SIM TASK] Module responding!");
+    SIM_EchoOff(&sim_modem);
+    if (SIM_GetIMEI(&sim_modem, g_sim_imei, sizeof(g_sim_imei)) == SIM_OK) {
+        /* Cập nhật IMEI cho MQTT Service và System Service để ID không còn UNKNOWN */
+        MQTT_Service_SetDeviceID(g_sim_imei);
+        System_Service_SetIMEI(g_sim_imei);
+        
         return SIM_ST_WAIT_NET;
     }
-    LOG_INFO("[SIM TASK] Waiting for module response...");
-    osDelay(2000);
     return SIM_ST_CHECK_COMM;
 }
 
 static SIM_State_t SIM_Handle_WaitNet(void) {
-    if (sim_modem.is_net_ready) {
-        LOG_INFO("[SIM TASK] Network registered!");
-        return SIM_ST_SERVICES_INIT;
-    }
-    
+    int stat = 0;
     LOG_INFO("[SIM TASK] Waiting for network registration... (CREG?)");
-    /* Polling CREG manual if URC not catched yet */
-    static uint8_t reg_retry = 0;
-    SIM_SendATCommand(&sim_modem, "AT+CREG?\r\n", "OK", 1000);
-    
-    if (++reg_retry > 10) {
-        LOG_WARN("[SIM TASK] Network taking too long, forcing search...");
-        SIM_SendATCommand(&sim_modem, "AT+COPS=0\r\n", "OK", 5000);
-        reg_retry = 0;
+    if (SIM_GetNetworkReg(&sim_modem, &stat) == SIM_OK) {
+        if (stat == 1 || stat == 5) {
+            return SIM_ST_SERVICES_INIT;
+        }
     }
     osDelay(3000);
     return SIM_ST_WAIT_NET;
 }
 
 static SIM_State_t SIM_Handle_ServicesInit(void) {
+    LOG_INFO("[SIM TASK] Initializing services (MQTT & SMS)...");
+    
     MQTT_Config_t mqtt_cfg = {
         .client_index = 0,
         .host = MQTT_BROKER_HOST,
@@ -152,15 +199,22 @@ static SIM_State_t SIM_Handle_ServicesInit(void) {
         LOG_INFO("[SIM TASK] MQTT Service Init OK, initializing SMS...");
         SMS_Service_Init(&sim_modem);
         
+        /* Đăng ký Callback xử lý tin nhắn ĐẾN */
+        SMS_Service_RegisterCallback(prv_SMS_ReceivedCallback);
+        
         return SIM_ST_MQTT_CONNECT;
     }
-    LOG_ERROR("[SIM TASK] MQTT Service Init Failed, retrying in 5s...");
+    
+    LOG_ERROR("[SIM TASK] Services Init Failed, retrying...");
     osDelay(5000);
     return SIM_ST_SERVICES_INIT;
 }
 
 static SIM_State_t SIM_Handle_MQTTConnect(void) {
     if (MQTT_Service_Connect(&sim_modem) == MQTT_OK) {
+        /* Báo cáo trạng thái Active ngay khi vừa kết nối xong */
+        MQTT_Service_QueuePublish("status", "{\"msg\":\"device_active\"}");
+        
         /* Subscribe thử một topic với QoS 1 */
         MQTT_Service_Subscribe(&sim_modem, "tracker/cmd", MQTT_QOS1, NULL);
         return SIM_ST_READY;
@@ -170,33 +224,72 @@ static SIM_State_t SIM_Handle_MQTTConnect(void) {
     return SIM_ST_MQTT_CONNECT;
 }
 
-static SIM_State_t SIM_Handle_Ready(uint32_t *last_pub_tick) {
-    /* Phục vụ MQTT, publish message định kỳ 10 giây/lần */
-    if ((xTaskGetTickCount() - *last_pub_tick) > pdMS_TO_TICKS(10000)) {
-        static uint32_t msg_counter = 0;
-        static uint8_t fail_cnt = 0;
-        msg_counter++;
+static SIM_State_t SIM_Handle_Ready(void) {
+    /* Trong trạng thái READY, Task chủ yếu đợi Mail để Publish hoặc phản hồi RI */
+    osEvent evt = MQTT_Service_GetMail(100);
+    if (evt.status == osEventMail) {
+        MQTT_Mail_t *mail = (MQTT_Mail_t*)evt.value.p;
+        LOG_INFO("[SIM TASK] MQTT Mail received via Service! Topic: %s", mail->topic);
         
-        char payload[128];
-        snprintf(payload, sizeof(payload), "{\"id\":\"%s\",\"cnt\":%lu,\"uptime\":%lu}", 
-                 MQTT_CLIENT_ID, msg_counter, xTaskGetTickCount() / 1000);
-                 
-        if (MQTT_Service_Publish(&sim_modem, "tracker/sensor", (const uint8_t*)payload, strlen(payload), MQTT_QOS1) == MQTT_OK) {
-            LOG_INFO("[SIM TASK] MQTT TX #%lu OK", msg_counter);
-            fail_cnt = 0;
-        } else {
-            fail_cnt++;
-            LOG_ERROR("[SIM TASK] MQTT TX FAIL (%d/3)", fail_cnt);
-            if (fail_cnt >= 3) {
-                LOG_WARN("[SIM TASK] Too many failures, forcing reconnect...");
-                fail_cnt = 0;
-                MQTT_Service_Disconnect(&sim_modem);
+        uint8_t mqtt_ok = 0;
+        if (MQTT_Service_Publish(&sim_modem, mail->topic, (uint8_t*)mail->payload, strlen(mail->payload), MQTT_QOS1) != MQTT_OK) {
+            LOG_ERROR("[SIM TASK] MQTT Publish FAIL. Verifying connection...");
+            /* Kiểm tra xem có bị rớt kết nối MQTT không */
+            if (MQTT_Service_IsConnected(&sim_modem) != MQTT_OK) {
+                LOG_WARN("[SIM TASK] MQTT Connection lost! Reconnecting...");
+                MQTT_Service_FreeMail(mail);
                 return SIM_ST_MQTT_CONNECT;
             }
+        } else {
+            LOG_INFO("[SIM TASK] MQTT Publish OK");
+            mqtt_ok = 1;
         }
-        *last_pub_tick = xTaskGetTickCount();
+
+        /* 3. Log vào Flash */
+        SystemData_t snap;
+        System_Service_GetSnapshot(&snap);
+        TrackerLog_t log_entry = {
+            .timestamp = snap.gps.utc_epoch,
+            .lat = snap.gps.lat,
+            .lon = snap.gps.lon,
+            .speed = snap.gps.speed,
+            .mode = (uint8_t)snap.mode,
+            .event = LOG_EVENT_PERIODIC, 
+            .mqtt_status = mqtt_ok
+        };
+        W25Q32_Task_Log(&log_entry);
+
+        MQTT_Service_FreeMail(mail);
     }
+    
+    if (g_modem_needs_init) {
+        g_modem_needs_init = false;
+        LOG_INFO("[SIM TASK] Redirecting to Power-On due to modem reset...");
+        return SIM_ST_POWER_ON;
+    }
+
     return SIM_ST_READY;
+}
+
+/**
+ * @brief Hàm xử lý khi có tin nhắn SMS gửi tới thiết bị.
+ */
+static void prv_SMS_ReceivedCallback(SMS_Message_t *msg) {
+    LOG_INFO("[SIM TASK] SMS Received from %s: %s", msg->phone, msg->content);
+    
+    char sms_json[300];
+    snprintf(sms_json, sizeof(sms_json), 
+             "{\"from\":\"%s\",\"time\":\"%s\",\"content\":\"%s\"}", 
+             msg->phone, msg->timestamp, msg->content);
+             
+    LOG_INFO("[SIM TASK] Forwarding SMS to MQTT (topic: sms)...");
+    MQTT_Service_QueuePublish("sms", sms_json);
+    
+}
+
+void SIM_Task_SetSleep(bool enable) {
+    /* Sleep functionality removed to keep system active. */
+    (void)enable;
 }
 
 static void SIM_Task_Entry(void const * argument) {
@@ -233,7 +326,7 @@ static void SIM_Task_Entry(void const * argument) {
             case SIM_ST_WAIT_NET:     state = SIM_Handle_WaitNet();      break;
             case SIM_ST_SERVICES_INIT:state = SIM_Handle_ServicesInit(); break;
             case SIM_ST_MQTT_CONNECT: state = SIM_Handle_MQTTConnect();  break;
-            case SIM_ST_READY:        state = SIM_Handle_Ready(&last_pub_tick); break;
+            case SIM_ST_READY:        state = SIM_Handle_Ready(); break;
             case SIM_ST_ERROR:
                 LOG_ERROR("[SIM TASK] Critical Error! Resetting...");
                 SIM_HardReset(&sim_modem);
@@ -241,4 +334,9 @@ static void SIM_Task_Entry(void const * argument) {
                 break;
         }
     }
+}
+
+bool SIM_Task_IsBusy(void) {
+    /* SIM bận khi đang xử lý khởi tạo hoặc MQTT đang hoạt động */
+    return g_sim_task_busy || MQTT_Service_IsStable() == false;
 }

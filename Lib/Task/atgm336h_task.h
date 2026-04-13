@@ -28,6 +28,18 @@ void ATGM336H_Task_Init(void);
  */
 bool ATGM336H_Task_GetLatestInfo(ATGM336H_Info_t *out);
 
+/**
+ * @brief Điều khiển chế độ Standby của GPS qua tập lệnh NMEA.
+ * @param enable true để vào Standby, false để thức dậy (gửi byte bất kỳ).
+ */
+void ATGM336H_Task_Standby(bool enable);
+
+/**
+ * @brief Khôi phục trạng thái nhận dữ liệu GPS sau khi Chip thức dậy từ STOP mode.
+ *        Hàm này khởi động lại DMA Receive to Idle.
+ */
+void ATGM336H_Task_Wakeup(void);
+
 #ifdef __cplusplus
 }
 #endif

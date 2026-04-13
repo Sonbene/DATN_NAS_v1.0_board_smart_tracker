@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "d:/DATN_NAS/stm32/code_board_v1_0/Smart_tracker_DATN_NAS/Lib/BSP",
-      "program": "d:/DATN_NAS/stm32/code_board_v1_0/Smart_tracker_DATN_NAS/Lib/BSP/build/Debug/outDebug",
+      "cwd": "d:/DATN_NAS/stm32/code_board_v1_0/Smart_tracker_DATN_NAS/Lib/Services/System",
+      "program": "d:/DATN_NAS/stm32/code_board_v1_0/Smart_tracker_DATN_NAS/Lib/Services/System/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

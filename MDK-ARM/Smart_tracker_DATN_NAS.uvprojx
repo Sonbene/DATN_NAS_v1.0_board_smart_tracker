@@ -338,7 +338,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32L431xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Services/StorageManager;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Lib/Services/IMU;../Config;../Lib/Services/Modem</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc;../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32L4xx/Include;../Drivers/CMSIS/Include;../Lib/BSP;../Lib/Driver_Custom;../Lib/Services/StorageManager;../Lib/Task;../Lib/Utils;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Lib/Services/IMU;../Config;../Lib/Services/Modem;../Lib/Services/System</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -600,6 +600,118 @@
               <FilePath>../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_exti.c</FilePath>
             </File>
             <File>
+              <FileName>stm32l4xx_hal_rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_rtc.c</FilePath>
+              <FileOption>
+                <CommonProperty>
+                  <UseCPPCompiler>2</UseCPPCompiler>
+                  <RVCTCodeConst>0</RVCTCodeConst>
+                  <RVCTZI>0</RVCTZI>
+                  <RVCTOtherData>0</RVCTOtherData>
+                  <ModuleSelection>0</ModuleSelection>
+                  <IncludeInBuild>1</IncludeInBuild>
+                  <AlwaysBuild>2</AlwaysBuild>
+                  <GenerateAssemblyFile>2</GenerateAssemblyFile>
+                  <AssembleAssemblyFile>2</AssembleAssemblyFile>
+                  <PublicsOnly>2</PublicsOnly>
+                  <StopOnExitCode>11</StopOnExitCode>
+                  <CustomArgument></CustomArgument>
+                  <IncludeLibraryModules></IncludeLibraryModules>
+                  <ComprImg>1</ComprImg>
+                </CommonProperty>
+                <FileArmAds>
+                  <Cads>
+                    <interw>2</interw>
+                    <Optim>0</Optim>
+                    <oTime>2</oTime>
+                    <SplitLS>2</SplitLS>
+                    <OneElfS>2</OneElfS>
+                    <Strict>2</Strict>
+                    <EnumInt>2</EnumInt>
+                    <PlainCh>2</PlainCh>
+                    <Ropi>2</Ropi>
+                    <Rwpi>2</Rwpi>
+                    <wLevel>0</wLevel>
+                    <uThumb>2</uThumb>
+                    <uSurpInc>2</uSurpInc>
+                    <uC99>2</uC99>
+                    <uGnu>2</uGnu>
+                    <useXO>2</useXO>
+                    <v6Lang>0</v6Lang>
+                    <v6LangP>0</v6LangP>
+                    <vShortEn>2</vShortEn>
+                    <vShortWch>2</vShortWch>
+                    <v6Lto>2</v6Lto>
+                    <v6WtE>2</v6WtE>
+                    <v6Rtti>2</v6Rtti>
+                    <VariousControls>
+                      <MiscControls></MiscControls>
+                      <Define></Define>
+                      <Undefine></Undefine>
+                      <IncludePath></IncludePath>
+                    </VariousControls>
+                  </Cads>
+                </FileArmAds>
+              </FileOption>
+            </File>
+            <File>
+              <FileName>stm32l4xx_hal_rtc_ex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_rtc_ex.c</FilePath>
+              <FileOption>
+                <CommonProperty>
+                  <UseCPPCompiler>2</UseCPPCompiler>
+                  <RVCTCodeConst>0</RVCTCodeConst>
+                  <RVCTZI>0</RVCTZI>
+                  <RVCTOtherData>0</RVCTOtherData>
+                  <ModuleSelection>0</ModuleSelection>
+                  <IncludeInBuild>1</IncludeInBuild>
+                  <AlwaysBuild>2</AlwaysBuild>
+                  <GenerateAssemblyFile>2</GenerateAssemblyFile>
+                  <AssembleAssemblyFile>2</AssembleAssemblyFile>
+                  <PublicsOnly>2</PublicsOnly>
+                  <StopOnExitCode>11</StopOnExitCode>
+                  <CustomArgument></CustomArgument>
+                  <IncludeLibraryModules></IncludeLibraryModules>
+                  <ComprImg>1</ComprImg>
+                </CommonProperty>
+                <FileArmAds>
+                  <Cads>
+                    <interw>2</interw>
+                    <Optim>0</Optim>
+                    <oTime>2</oTime>
+                    <SplitLS>2</SplitLS>
+                    <OneElfS>2</OneElfS>
+                    <Strict>2</Strict>
+                    <EnumInt>2</EnumInt>
+                    <PlainCh>2</PlainCh>
+                    <Ropi>2</Ropi>
+                    <Rwpi>2</Rwpi>
+                    <wLevel>0</wLevel>
+                    <uThumb>2</uThumb>
+                    <uSurpInc>2</uSurpInc>
+                    <uC99>2</uC99>
+                    <uGnu>2</uGnu>
+                    <useXO>2</useXO>
+                    <v6Lang>0</v6Lang>
+                    <v6LangP>0</v6LangP>
+                    <vShortEn>2</vShortEn>
+                    <vShortWch>2</vShortWch>
+                    <v6Lto>2</v6Lto>
+                    <v6WtE>2</v6WtE>
+                    <v6Rtti>2</v6Rtti>
+                    <VariousControls>
+                      <MiscControls></MiscControls>
+                      <Define></Define>
+                      <Undefine></Undefine>
+                      <IncludePath></IncludePath>
+                    </VariousControls>
+                  </Cads>
+                </FileArmAds>
+              </FileOption>
+            </File>
+            <File>
               <FileName>stm32l4xx_hal_spi.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_spi.c</FilePath>
@@ -729,6 +841,16 @@
               <FileType>5</FileType>
               <FilePath>..\Lib\Task\sim_task.h</FilePath>
             </File>
+            <File>
+              <FileName>system_manager_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Task\system_manager_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>system_manager_task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Task\system_manager_task.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -838,6 +960,16 @@
               <FileName>sms_service.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Lib\Services\Modem\sms_service.h</FilePath>
+            </File>
+            <File>
+              <FileName>system_service.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Services\System\system_service.h</FilePath>
+            </File>
+            <File>
+              <FileName>system_service.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Services\System\system_service.c</FilePath>
             </File>
           </Files>
         </Group>

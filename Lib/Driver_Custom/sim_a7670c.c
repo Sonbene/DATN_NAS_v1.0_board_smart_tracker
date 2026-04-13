@@ -32,12 +32,8 @@ void SIM_Init(SIM_Handle_t *handle, BSP_UART_Handle_t *uart) {
 void SIM_PowerOn(SIM_Handle_t *handle) {
     LOG_INFO("[SIM] Starting Smart Power-On Sequence...");
 
-    /* 1. Kiểm tra xem module đã bật sẵn chưa */
-    if (SIM_TestAlive(handle) == SIM_OK) {
-        LOG_INFO("[SIM] Module already alive, skipping power sequence.");
-        handle->is_power_on = true;
-        return;
-    }
+    /* Force a hardware reset to ensure clean state after cold boot */
+    LOG_INFO("[SIM] Executing hardware power-on/reset...");
 
     LOG_INFO("[SIM] Module not responding, executing hardware power-on...");
 
@@ -47,10 +43,10 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
     HAL_GPIO_WritePin(handle->rst_port, handle->rst_pin, GPIO_PIN_RESET);
     osDelay(1500);
 
-    /* 3. PWRKEY sequence */
-    HAL_GPIO_WritePin(handle->pwr_port, handle->pwr_pin, GPIO_PIN_SET);
-    osDelay(1500); 
+    /* 3. PWRKEY sequence: Pulse LOW (Active) then return HIGH (Idle) */
     HAL_GPIO_WritePin(handle->pwr_port, handle->pwr_pin, GPIO_PIN_RESET);
+    osDelay(1500); 
+    HAL_GPIO_WritePin(handle->pwr_port, handle->pwr_pin, GPIO_PIN_SET);
     
     /* 4. Đợi phản hồi AT (Thử trong 15 giây với nhịp độ 1s như temp_mqtt) */
     LOG_INFO("[SIM] Waiting for SIM to respond (up to 15s)...");
@@ -84,11 +80,11 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
 }
 
 void SIM_HardReset(SIM_Handle_t *handle) {
-    LOG_WARN("[SIM] Hard resetting module...");
-    HAL_GPIO_WritePin(handle->rst_port, handle->rst_pin, GPIO_PIN_SET);
-    osDelay(500);
+    /* Pulse LOW (Active) then return HIGH (Idle) */
     HAL_GPIO_WritePin(handle->rst_port, handle->rst_pin, GPIO_PIN_RESET);
-    osDelay(2000);
+    osDelay(500);
+    HAL_GPIO_WritePin(handle->rst_port, handle->rst_pin, GPIO_PIN_SET);
+    osDelay(2000); // Chờ ổn định sau reset 
 }
 
 SIM_Status_t SIM_SendATCommandEx(SIM_Handle_t *handle, const char *command, const char *expected_response, char *out_buf, uint16_t out_len, uint32_t timeout_ms) {
@@ -119,16 +115,37 @@ SIM_Status_t SIM_SendATCommand(SIM_Handle_t *handle, const char *command, const 
     return SIM_SendATCommandEx(handle, command, expected_response, NULL, 0, timeout_ms);
 }
 
+SIM_Status_t SIM_GetIMEI(SIM_Handle_t *handle, char *out, uint16_t max_len) {
+    if (handle == NULL || out == NULL || max_len < 16) return SIM_ERROR;
+
+    char buf[64];
+    /* AT+GSN trả về chuỗi IMEI trực tiếp */
+    if (SIM_SendATCommandEx(handle, "AT+GSN\r\n", "OK", buf, sizeof(buf), 2000) == SIM_OK) {
+        /* Bỏ qua các ký tự trắng/newline ở đầu nếu có */
+        char *p = buf;
+        while (*p == '\r' || *p == '\n') p++;
+        
+        uint16_t len = 0;
+        while (p[len] >= '0' && p[len] <= '9' && len < max_len - 1) {
+            out[len] = p[len];
+            len++;
+        }
+        out[len] = '\0';
+        
+        if (len >= 14) { // IMEI thường có 15 số
+            LOG_INFO("[SIM] IMEI: %s", out);
+            return SIM_OK;
+        }
+    }
+    return SIM_ERROR;
+}
+
 SIM_Status_t SIM_TestAlive(SIM_Handle_t *handle) {
     return SIM_SendATCommand(handle, "AT\r\n", "OK", 1000);
 }
 
 SIM_Status_t SIM_EchoOff(SIM_Handle_t *handle) {
     return SIM_SendATCommand(handle, "ATE0\r\n", "OK", 1000);
-}
-
-SIM_Status_t SIM_GetIMEI(SIM_Handle_t *handle, char *out, uint16_t max_len) {
-    return SIM_SendATCommandEx(handle, "AT+GSN\r\n", "OK", out, max_len, 2000);
 }
 
 SIM_Status_t SIM_GetCSQ(SIM_Handle_t *handle, int *rssi, int *ber) {
@@ -180,24 +197,66 @@ SIM_Status_t SIM_SendSMS(SIM_Handle_t *handle, const char *phone, const char *ms
     return SIM_ERROR;
 }
 
-SIM_Status_t SIM_ReadSMS(SIM_Handle_t *handle, int index, char *out_msg, uint16_t max_len) {
+SIM_Status_t SIM_ReadSMS(SIM_Handle_t *handle, int index, char *out_phone, char *out_time, char *out_msg, uint16_t max_len) {
     char cmd[32];
     snprintf(cmd, sizeof(cmd), "AT+CMGR=%d\r\n", index);
     
     char buf[512];
     if (SIM_SendATCommandEx(handle, cmd, "OK", buf, sizeof(buf), 5000) == SIM_OK) {
-        /* Phản hồi có dạng: +CMGR: "REC READ","+84xxx",,"24/04/10,22:00:00+28"\r\nNội dung tin nhắn\r\nOK */
-        char *p = strstr(buf, "\r\n");
-        if (p) {
-            p += 2; // Bỏ qua \r\n sau dòng +CMGR
-            char *p_end = strstr(p, "\r\nOK");
-            if (p_end) {
-                uint16_t len = p_end - p;
-                if (len >= max_len) len = max_len - 1;
-                memcpy(out_msg, p, len);
-                out_msg[len] = '\0';
-                return SIM_OK;
+        /* Phản hồi thực tế thường là: \r\n+CMGR: "REC UNREAD","+84...","","..."\r\nNội dung\r\nOK */
+        
+        char *p_cmgr = strstr(buf, "+CMGR:");
+        if (!p_cmgr) return SIM_ERROR;
+
+        char *p_line_end = strstr(p_cmgr, "\r\n");
+        if (!p_line_end) return SIM_ERROR;
+        
+        *p_line_end = '\0'; // Ngắt chuỗi tại cuối dòng +CMGR để parse header
+
+        /* 1. Parse header (SĐT và Thời gian) */
+        char *quotes[10];
+        int quote_count = 0;
+        char *p = p_cmgr;
+        while ((p = strchr(p, '\"')) != NULL && quote_count < 10) {
+            quotes[quote_count++] = p;
+            p++;
+        }
+
+        // SĐT thường nằm ở ngoặc kép thứ 3 và 4
+        if (quote_count >= 4 && out_phone) {
+            int len = quotes[3] - quotes[2] - 1;
+            if (len > 19) len = 19;
+            if (len > 0) {
+                memcpy(out_phone, quotes[2] + 1, len);
+                out_phone[len] = '\0';
             }
+        }
+
+        // Thời gian thường nằm ở ngoặc kép thứ 7 và 8
+        if (quote_count >= 8 && out_time) {
+            int len = quotes[7] - quotes[6] - 1;
+            if (len > 31) len = 31;
+            if (len > 0) {
+                memcpy(out_time, quotes[6] + 1, len);
+                out_time[len] = '\0';
+            }
+        }
+
+        /* 2. Parse nội dung thực tế (bắt đầu sau p_line_end cũ) */
+        char *p_content = p_line_end + 2;
+        char *p_ok = strstr(p_content, "\r\nOK");
+        if (p_ok) {
+            uint16_t len = p_ok - p_content;
+            if (len >= max_len) len = max_len - 1;
+            memcpy(out_msg, p_content, len);
+            out_msg[len] = '\0';
+            
+            /* Xử lý an toàn cho JSON: Thay thế " thành ' */
+            for (int i = 0; i < len; i++) {
+                if (out_msg[i] == '\"') out_msg[i] = '\'';
+                if (out_msg[i] == '\r' || out_msg[i] == '\n') out_msg[i] = ' '; // Xóa xuống dòng trong content
+            }
+            return SIM_OK;
         }
     }
     return SIM_ERROR;
@@ -213,6 +272,35 @@ SIM_Status_t SIM_PowerDown(SIM_Handle_t *handle) {
     return SIM_SendATCommand(handle, "AT+CPOWD=1\r\n", "NORMAL POWER DOWN", 5000);
 }
 
+SIM_Status_t SIM_SetSleepMode(SIM_Handle_t *handle, bool enable) {
+    if (handle == NULL) return SIM_ERROR;
+
+    if (enable) {
+        /* 1. Kích hoạt chế độ ngủ bằng lệnh AT */
+        if (SIM_SendATCommand(handle, "AT+CSCLK=1\r\n", "OK", 1000) != SIM_OK) {
+            return SIM_ERROR;
+        }
+        /* 2. Kéo chân DTR lên CAO để module có thể đi ngủ */
+        HAL_GPIO_WritePin(handle->dtr_port, handle->dtr_pin, GPIO_PIN_SET);
+        LOG_INFO("[SIM] Sleep Mode Enabled (DTR High)");
+    } else {
+        /* 1. ÉP ĐÁNH THỨC PHẦN CỨNG: Hạ DTR xuống Thấp */
+        HAL_GPIO_WritePin(handle->dtr_port, handle->dtr_pin, GPIO_PIN_RESET);
+        
+        /* Toggles DTR để đảm bảo module nhận diện được sự thay đổi trạng thái nếu nó đang kẹt */
+        HAL_GPIO_WritePin(handle->dtr_port, handle->dtr_pin, GPIO_PIN_SET);
+        osDelay(100);
+        HAL_GPIO_WritePin(handle->dtr_port, handle->dtr_pin, GPIO_PIN_RESET);
+        
+        osDelay(800); // Tăng thời gian chờ module ổn định UART sau khi thức dậy
+        
+        /* 2. Tắt chế độ ngủ tự động */
+        SIM_SendATCommand(handle, "AT+CSCLK=0\r\n", "OK", 1000);
+        LOG_INFO("[SIM] Module Wakeup (DTR Low forced)");
+    }
+    return SIM_OK;
+}
+
 SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const uint8_t *data, uint16_t data_len, const char *expected_response, uint32_t prompt_timeout_ms, uint32_t resp_timeout_ms) {
     if (handle == NULL || command == NULL || data == NULL) return SIM_ERROR;
 
@@ -224,13 +312,17 @@ SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const
         return SIM_ERROR;
     }
 
-    /* 2. Đợi ký tự '>' */
+    /* 2. Đợi ký tự '>' hoặc lỗi ERROR */
     bool prompt_received = false;
     uint32_t start_time = HAL_GetTick();
     while (HAL_GetTick() - start_time < prompt_timeout_ms) {
         if (RingBuffer_Search(&handle->rx_rb, ">")) {
             prompt_received = true;
             break;
+        }
+        if (RingBuffer_Search(&handle->rx_rb, "ERROR") || RingBuffer_Search(&handle->rx_rb, "+CME ERROR")) {
+            LOG_ERROR("[SIM] Command rejected with ERROR (no prompt)");
+            return SIM_ERROR;
         }
         osDelay(10);
     }
@@ -336,5 +428,28 @@ void SIM_A7670C_Process(SIM_Handle_t *handle) {
                 }
             }
         }
+        
+        /* --- 4. Nhóm Hệ thống (Reboot/Ready) --- */
+        else if (strstr(line, "*ATREADY: 1") != NULL) {
+            LOG_WARN("[SIM] Modem Reboot Detected (*ATREADY)");
+            if (handle->event_cb) {
+                SIM_Message_t msg = {SIM_EVENT_MODEM_RESET, NULL, 0};
+                handle->event_cb(&msg);
+            }
+        }
     }
+}
+
+SIM_Status_t SIM_MQTT_IsConnected(SIM_Handle_t *handle) {
+    if (handle == NULL) return SIM_ERROR;
+    
+    char resp[128];
+    /* Kiểm tra trạng thái kết nối của client 0 */
+    if (SIM_SendATCommandEx(handle, "AT+CMQTTCONNECT?\r\n", "OK", resp, sizeof(resp), 2000) == SIM_OK) {
+        /* Phản hồi mong đợi khi có kết nối: +CMQTTCONNECT: 0,"tcp://...",... */
+        if (strstr(resp, "+CMQTTCONNECT: 0,\"tcp")) {
+            return SIM_OK;
+        }
+    }
+    return SIM_ERROR;
 }

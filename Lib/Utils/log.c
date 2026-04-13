@@ -56,14 +56,19 @@ void Debug_Log(const char *fmt, ...)
     va_end(args);
 
     if (len <= 0) return;
-
+    
+    /* Kiểm tra trạng thái hệ thống */
+    BaseType_t is_in_isr = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0;
+    
     if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING || xLogQueue == NULL) {
+        /* Nếu OS chưa chạy hoặc Queue chưa sẵn sàng, in trực tiếp UART */
         BSP_UART_Transmit(&debug_uart_handle, (uint8_t*)item.msg, len, 100);
     } else {
-        if ((SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0) {
+        if (is_in_isr) {
             BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-            xQueueSendFromISR(xLogQueue, &item, &xHigherPriorityTaskWoken);
-            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+            if (xQueueSendFromISR(xLogQueue, &item, &xHigherPriorityTaskWoken) == pdPASS) {
+                portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+            }
         } else {
             xQueueSend(xLogQueue, &item, 0);
         }

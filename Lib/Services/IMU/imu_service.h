@@ -51,7 +51,13 @@
 
 /** @defgroup WOMConfig Wake-on-Motion Config */
 /** @{ */
-#define IMU_WOM_THRESHOLD_LSB           15     /**< WOM threshold ~48mg (@±4g, 4mg/LSB) - More sensitive */
+#define IMU_WOM_THRESHOLD_LSB           25     /**< 25 * 4mg = 100mg */
+/** @} */
+
+/** @defgroup MotionStatus Motion Status Polling Config */
+/** @{ */
+#define IMU_MOTION_THRESHOLD_G          1.25f   /**< Ngưỡng rung để coi là đang di chuyển (g) */
+#define IMU_MOTION_LATCH_MS             5000    /**< Thời gian giữ trạng thái rung sau khi ngừng (ms) */
 /** @} */
 
 /* ========================================================================================
@@ -162,5 +168,16 @@ void IMU_Service_HandleINT2(void);
  * @return  IMU_SVC_OK nếu thành công
  */
 IMU_Status_t IMU_Service_ReadAll(ICM42605_AllData_t *data);
+
+/**
+ * @brief  Kiểm tra hệ thống có đang ở trạng thái chuyển động/rung không.
+ * @return true nếu có sự kiện rung trong vòng 2 phút gần nhất.
+ */
+bool IMU_Service_IsMoving(void);
+
+/**
+ * @brief Xóa sạch toàn bộ cờ ngắt của IMU (Dùng trước khi đi ngủ) 
+ */
+void IMU_Service_ClearStatus(void);
 
 #endif /* __IMU_SERVICE_H__ */

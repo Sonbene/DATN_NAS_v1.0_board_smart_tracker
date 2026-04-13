@@ -57,6 +57,7 @@ static struct {
     void                *user_data;     /**< User data cho callback */
     IMU_Mode_t          mode;           /**< Chế độ hiện tại */
     CrashCtx_t          crash;          /**< Crash detection context */
+    uint32_t            last_motion_tick; /**< Mốc thời gian cuối cùng phát hiện chuyển động/rung */
     uint8_t             fifo_buf[IMU_FIFO_BUFFER_SIZE + 16]; /**< FIFO DMA buffer (+ margin) */
 } svc;
 
@@ -411,12 +412,24 @@ void IMU_Service_HandleINT1(void)
             };
             svc.callback(&event, svc.user_data);
         }
+        
+        /* Cập nhật mốc thời gian rung */
+        svc.last_motion_tick = osKernelSysTick();
     } else {
         /* Đọc INT_STATUS cũng để clear các pending bit khác */
         uint8_t status0 = 0;
         ICM42605_ReadIntStatus(svc.imu, &status0);
-        LOG_INFO("[IMU_SVC] INT1: No WOM — STATUS=0x%02X, STATUS2=0x%02X", status0, status2);
+        // LOG_INFO("[IMU_SVC] INT1: No WOM — STATUS=0x%02X, STATUS2=0x%02X", status0, status2);
     }
+}
+
+void IMU_Service_ClearStatus(void)
+{
+    if (svc.imu == NULL) return;
+    uint8_t dummy;
+    ICM42605_ReadIntStatus(svc.imu, &dummy);
+    ICM42605_ReadIntStatus2(svc.imu, &dummy);
+    ICM42605_ReadIntStatus3(svc.imu, &dummy);
 }
 
 void IMU_Service_HandleINT2(void)
@@ -446,8 +459,8 @@ void IMU_Service_HandleINT2(void)
     }
     uint16_t bytes_to_read = records_to_read * IMU_FIFO_RECORD_SIZE;
 
-    LOG_INFO("[IMU_SVC] INT2: FIFO count=%d bytes, reading %d records (%d bytes)",
-             fifo_count, records_to_read, bytes_to_read);
+    // LOG_INFO("[IMU_SVC] INT2: FIFO count=%d bytes, reading %d records (%d bytes)",
+    //          fifo_count, records_to_read, bytes_to_read);
 
     /* DMA đọc FIFO */
     /* DMA đọc FIFO */
@@ -479,8 +492,12 @@ void IMU_Service_HandleINT2(void)
         prv_FilterUpdate(&svc.crash.filter, accel_mag, gyro_mag,
                          &filtered_accel, &filtered_gyro);
 
-        /* Chạy thuật toán crash detection */
         prv_CrashProcessSample(filtered_accel, filtered_gyro);
+        
+        /* Nếu phát hiện rung động cơ bản (accel > Threshold), coi là có chuyển động */
+        if (filtered_accel > IMU_MOTION_THRESHOLD_G) {
+            svc.last_motion_tick = osKernelSysTick();
+        }
     }
 }
 
@@ -489,4 +506,16 @@ IMU_Status_t IMU_Service_ReadAll(ICM42605_AllData_t *data)
     if (svc.imu == NULL || data == NULL) return IMU_SVC_ERROR;
     ICM42605_Status_t ret = ICM42605_ReadAllData(svc.imu, data);
     return (ret == ICM42605_OK) ? IMU_SVC_OK : IMU_SVC_ERROR;
+}
+
+bool IMU_Service_IsMoving(void)
+{
+    /* Nếu chưa có mốc thời gian nào, coi như chưa rung */
+    if (svc.last_motion_tick == 0) return false;
+
+    /* Kiểm tra nếu có rung trong vòng X giây gần nhất */
+    if ((osKernelSysTick() - svc.last_motion_tick) < pdMS_TO_TICKS(IMU_MOTION_LATCH_MS)) {
+        return true;
+    }
+    return false;
 }

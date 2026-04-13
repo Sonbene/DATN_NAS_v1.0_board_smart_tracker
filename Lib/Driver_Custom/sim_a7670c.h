@@ -22,7 +22,8 @@ typedef enum {
     SIM_EVENT_MQTT_MSG,     /* Có tin nhắn MQTT mới */
     SIM_EVENT_SMS_MSG,      /* Có tin nhắn SMS mới */
     SIM_EVENT_NET_READY,    /* Đã có mạng */
-    SIM_EVENT_NET_LOST      /* Mất mạng */
+    SIM_EVENT_NET_LOST,     /* Mất mạng */
+    SIM_EVENT_MODEM_RESET   /* Modem vừa khởi động lại (nhận *ATREADY) */
 } SIM_Event_t;
 
 typedef struct {
@@ -89,6 +90,7 @@ void SIM_HardReset(SIM_Handle_t *handle);
  * @param prompt_timeout_ms: Thời gian tối đa đợi dấu '>'
  * @param resp_timeout_ms: Thời gian tối đa đợi phản hồi sau khi gửi data
  */
+SIM_Status_t SIM_MQTT_IsConnected(SIM_Handle_t *handle);
 SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const uint8_t *data, uint16_t data_len, const char *expected_response, uint32_t prompt_timeout_ms, uint32_t resp_timeout_ms);
 
 /**
@@ -110,9 +112,16 @@ SIM_Status_t SIM_CheckSIMCard(SIM_Handle_t *handle);
 SIM_Status_t SIM_GetNetworkReg(SIM_Handle_t *handle, int *stat);
 SIM_Status_t SIM_GetOperator(SIM_Handle_t *handle, char *out, uint16_t max_len);
 SIM_Status_t SIM_SendSMS(SIM_Handle_t *handle, const char *phone, const char *msg);
-SIM_Status_t SIM_ReadSMS(SIM_Handle_t *handle, int index, char *out_msg, uint16_t max_len);
+SIM_Status_t SIM_ReadSMS(SIM_Handle_t *handle, int index, char *out_phone, char *out_time, char *out_msg, uint16_t max_len);
 SIM_Status_t SIM_DeleteSMS(SIM_Handle_t *handle, int index);
 SIM_Status_t SIM_PowerDown(SIM_Handle_t *handle);
+
+/**
+ * @brief Điều khiển chế độ ngủ của Modem (Light Sleep)
+ * @param enable: true để cho phép ngủ (DTR High), false để thức dậy (DTR Low)
+ */
+SIM_Status_t SIM_SetSleepMode(SIM_Handle_t *handle, bool enable);
+
 
 /**
  * @brief Hàm xử lý dữ liệu nhận được từ UART (Gọi từ BSP UART Callback)

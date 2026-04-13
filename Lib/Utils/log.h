@@ -20,7 +20,7 @@
     /* Handle UART logging an toàn */
     extern BSP_UART_Handle_t debug_uart_handle;
     
-    #define LOG_MSG_MAX_LEN  512
+    #define LOG_MSG_MAX_LEN  256
     #define LOG_ENABLE_SYS_MONITOR 1
 
     /**

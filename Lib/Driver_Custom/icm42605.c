@@ -746,13 +746,13 @@ ICM42605_Status_t ICM42605_ConfigWom(ICM42605_Handle_t *handle,
     ret = prv_WriteRegister(handle, ICM42605_REG_SMD_CONFIG, smd_cfg);
     if (ret != ICM42605_OK) return ret;
 
-    /* Bước 4: Bật lại accel ở LN mode */
-    ret = ICM42605_SetAccelMode(handle, ICM42605_ACCEL_MODE_LN);
+    /* Bước 4: Chế độ hoạt động do Caller quyết định (mặc định bật lại LP để WOM chạy) */
+    ret = ICM42605_SetAccelMode(handle, ICM42605_ACCEL_MODE_LP);
     if (ret != ICM42605_OK) return ret;
-
+    
     osDelay(ICM42605_POWER_CHANGE_DELAY_MS);
 
-    LOG_INFO("[ICM42605] WOM configured (THR: X=%d Y=%d Z=%d)",
+    LOG_INFO("[ICM42605] WOM configured and Accel restored to LP (THR: X=%d Y=%d Z=%d)",
              config->threshold_x, config->threshold_y, config->threshold_z);
 
     return ICM42605_OK;

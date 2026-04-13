@@ -30,6 +30,8 @@
 #include "bsp_adc.h"
 #include "battery_task.h"
 #include "sim_task.h"
+#include "system_service.h"
+#include "system_manager_task.h"
 #include "log.h"
 /* USER CODE END Includes */
 
@@ -51,6 +53,8 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
+
+RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef hdma_spi1_tx;
@@ -79,6 +83,7 @@ static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_RTC_Init(void);
 void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
@@ -94,13 +99,9 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
   }
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) 
 {
-    /* CH?NG HARD FAULT: B? qua ngắt nếu OS (FreeRTOS) chưa chính thức chạy */
-    if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) {
-        return;
-    }
-
+    /* 2. Gửi tín hiệu thông báo cho các Task của bạn (GIỮ NGUYÊN HOÀN TOÀN) */
     if (GPIO_Pin == IMU_INT1_PIN) {
         /* INT1 (PA0) — Wake-on-Motion */
         ICM42605_Task_NotifyINT1FromISR(); 
@@ -115,6 +116,15 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     }
 }
 
+
+/**
+ * @brief Callback xử lý ngắt định kỳ từ RTC Wakeup Timer
+ */
+void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
+{
+    /* �?ặt nguồn đánh thức là RTC Alarm */
+}
+
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
     if (hspi->Instance == SPI1) {
@@ -122,7 +132,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
     }
 }
 
-void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) 
 {
     if (hspi->Instance == SPI1) {
         BSP_SPI_ErrorCallback((BSP_SPI_Handle_t *)spi1_bus.active_handle);
@@ -181,15 +191,30 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   Debug_Init();
   LOG_INFO("[MAIN] System Starting...");
 
-  /* Initialize Shared SPI1 Bus */
+  /* 1. Khởi tạo Bus dùng chung (Phải làm đầu tiên để các driver có bus để chạy) */
   BSP_SPI_Bus_Init(&spi1_bus, &hspi1);
-  LOG_INFO("[MAIN] SPI1 Bus initialized (shared: W25Q32 + ICM42605)");
+  LOG_INFO("[MAIN] SPI1 Bus initialized (W25Q32 + ICM42605)");
 
-  /* Start Tasks & Component Inits */
+  /* 2. Khởi tạo System Services */
+  System_Service_Init();
+
+  /* 3. Khởi tạo các Task (Driver & Task) */
+  Log_Task_Init();
+  W25Q32_Task_Init();
+  ICM42605_Task_Init();
+  ATGM336H_Task_Init();
+  Battery_Task_Init(&hadc1, ADC_CHANNEL_6);
+  SIM_Task_Init(&huart2);
+  System_Manager_Task_Init();
+
+  
+  LOG_INFO("[MAIN] All components initialized and ready");
+
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -215,12 +240,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-  Log_Task_Init();
-  W25Q32_Task_Init();
-  ICM42605_Task_Init();
-  ATGM336H_Task_Init();
-  Battery_Task_Init(&hadc1, ADC_CHANNEL_6);
-  SIM_Task_Init(&huart2);
+
 
   LOG_INFO("[MAIN] Tasks started and components encapsulated");
   /* USER CODE END RTOS_THREADS */
@@ -258,8 +278,9 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 1;
@@ -342,6 +363,49 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Enable the WakeUp
+  */
+  if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 3599, RTC_WAKEUPCLOCK_CK_SPRE_17BITS) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
 
 }
 
@@ -606,12 +670,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/**
-  * @brief  Tx Transfer completed callback
-  * @param  huart: UART handle 
-  * @retval None
-  */
-
 
 
 
