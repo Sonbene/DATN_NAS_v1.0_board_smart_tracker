@@ -57,6 +57,7 @@ typedef struct {
     /* State */
     bool is_power_on;
     bool is_net_ready;
+    bool is_waiting_resp;   /* Flag báo hiệu đang chờ phản hồi lệnh AT đồng bộ */
 } SIM_Handle_t;
 
 /**
@@ -121,6 +122,15 @@ SIM_Status_t SIM_PowerDown(SIM_Handle_t *handle);
  * @param enable: true để cho phép ngủ (DTR High), false để thức dậy (DTR Low)
  */
 SIM_Status_t SIM_SetSleepMode(SIM_Handle_t *handle, bool enable);
+ 
+ /**
+  * @brief Lấy vị trí từ cột sóng (LBS)
+  * @param lat Pointer nhận vĩ độ
+  * @param lon Pointer nhận kinh độ
+  */
+ SIM_Status_t SIM_GetLBSPosition(SIM_Handle_t *handle, float *lat, float *lon,
+                                 uint8_t *y, uint8_t *mon, uint8_t *d,
+                                 uint8_t *h, uint8_t *min, uint8_t *s);
 
 
 /**

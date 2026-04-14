@@ -7,10 +7,11 @@
  * SECTION: Private Variables
  * ======================================================================================== */
 
+/* Cấu hình mặc định */
 static SystemData_t g_sys_data;
 static SystemConfig_t g_sys_config = {
-    .active_interval_s = 30,
-    .stationary_interval_s = 60,
+    .active_interval_s = DEFAULT_ACTIVE_INTERVAL_S,
+    .stationary_interval_s = DEFAULT_STATIONARY_INTERVAL_S,
     .is_armed = true,
     .gps_enable = true,
     .alert_enable = true
@@ -47,8 +48,8 @@ void System_Service_Init(void) {
     memset(&g_sys_data, 0, sizeof(SystemData_t));
     
     /* 2. Ép gán cấu hình mặc định tường minh để tránh rác bộ nhớ */
-    g_sys_config.active_interval_s = 30;
-    g_sys_config.stationary_interval_s = 60;
+    g_sys_config.active_interval_s = DEFAULT_ACTIVE_INTERVAL_S;
+    g_sys_config.stationary_interval_s = DEFAULT_STATIONARY_INTERVAL_S;
     g_sys_config.is_armed = true;
     g_sys_config.gps_enable = true;
     g_sys_config.alert_enable = true;
@@ -58,6 +59,7 @@ void System_Service_Init(void) {
     g_sys_data.mutex = osMutexCreate(osMutex(sysMutex));
     
     g_sys_data.mode = SYS_MODE_INIT;
+    g_sys_data.gps.source = POS_SOURCE_NO_FIX;
     g_sys_data.force_report = false;
     g_sys_data.sensor.imu_update_tick = osKernelSysTick(); // Khởi đầu mốc thời gian im lặng
     strncpy(g_sys_data.imei, "UNKNOWN", sizeof(g_sys_data.imei) - 1);
@@ -84,7 +86,8 @@ void System_Service_GetSnapshot(SystemData_t *out) {
  * ======================================================================================== */
 
 void System_Service_UpdateGPS(float lat, float lon, float spd, uint8_t fix, uint8_t sats,
-                              uint8_t h, uint8_t m, uint8_t s, uint8_t day, uint8_t mon, uint8_t yr) {
+                               uint8_t h, uint8_t m, uint8_t s, uint8_t day, uint8_t mon, uint8_t yr,
+                               PositionSource_t source) {
     if (g_sys_data.mutex == NULL) return;
     osMutexWait(g_sys_data.mutex, 100);
     
@@ -104,6 +107,7 @@ void System_Service_UpdateGPS(float lat, float lon, float spd, uint8_t fix, uint
     g_sys_data.gps.utc_epoch = prv_ConvertToEpoch(h, m, s, day, mon, yr);
     
     g_sys_data.gps.last_update_tick = osKernelSysTick();
+    g_sys_data.gps.source = source;
 
     /* Logic: Tốc độ cao + Có Fix -> Luôn coi là ACTIVE */
     if (spd > MOVING_SPEED_THRESHOLD && fix > 0) {
@@ -111,6 +115,13 @@ void System_Service_UpdateGPS(float lat, float lon, float spd, uint8_t fix, uint
         g_sys_data.sensor.imu_update_tick = osKernelSysTick();
     }
     
+    osMutexRelease(g_sys_data.mutex);
+}
+
+void System_Service_UpdateSource(PositionSource_t source) {
+    if (g_sys_data.mutex == NULL) return;
+    osMutexWait(g_sys_data.mutex, 100);
+    g_sys_data.gps.source = source;
     osMutexRelease(g_sys_data.mutex);
 }
 
@@ -212,9 +223,10 @@ int System_Service_ToJSON(char *buf, uint16_t len) {
     
     /* Format JSON trực tiếp từ biến toàn cục để tránh lỗi copy Stack */
     written = snprintf(buf, len, 
-        "{\"id\":\"%s\",\"lat\":%.6f,\"lon\":%.6f,\"spd\":%.1f,\"bat\":%d,\"st\":%d,\"ts\":\"20%02d-%02d-%02d %02d:%02d:%02d\"}",
+        "{\"id\":\"%s\",\"lat\":%.6f,\"lon\":%.6f,\"spd\":%.1f,\"bat\":%d,\"st\":%d,\"src\":\"%s\",\"ts\":\"20%02d-%02d-%02d %02d:%02d:%02d\"}",
         g_sys_data.imei, g_sys_data.gps.lat, g_sys_data.gps.lon, g_sys_data.gps.speed, 
         g_sys_data.sensor.battery_pct, (int)g_sys_data.mode,
+        g_sys_data.gps.source == POS_SOURCE_LBS ? "LBS" : (g_sys_data.gps.source == POS_SOURCE_NO_FIX ? "NO_FIX" : "GPS"),
         g_sys_data.gps.year, g_sys_data.gps.month, g_sys_data.gps.day,
         g_sys_data.gps.hour, g_sys_data.gps.min, g_sys_data.gps.sec);
     
@@ -250,4 +262,14 @@ void System_Service_UpdateConfig(SystemConfig_t *new_cfg) {
     osMutexWait(g_sys_data.mutex, osWaitForever);
     memcpy(&g_sys_config, new_cfg, sizeof(SystemConfig_t));
     osMutexRelease(g_sys_data.mutex);
+}
+
+void System_Service_VisualNotify(uint8_t count) {
+    LOG_INFO("[SYS_SVC] Visual notification: blinking PC13 x%d", count);
+    for (uint8_t i = 0; i < count; i++) {
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET); // Led ON (Active Low)
+        osDelay(150);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);   // Led OFF
+        osDelay(150);
+    }
 }

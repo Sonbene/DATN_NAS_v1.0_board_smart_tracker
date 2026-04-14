@@ -19,7 +19,7 @@
 #define GPS_TIMEZONE_OFFSET     7       /**< Múi giờ Việt Nam (UTC+7) */
 
 /* Mở comment dòng dưới đây để bật chế độ GIẢ LẬP GPS khi ở trong nhà */
-#define GPS_SIMULATION_MODE 
+//#define GPS_SIMULATION_MODE 
 #define SIM_LAT     21.028511   /* Tọa độ giả lập: Hà Nội */
 #define SIM_LON     105.804817
 
@@ -205,8 +205,15 @@ static void StartATGM336HTask(void const *argument)
         }
         LOG_WARN("[GPS] !!! SIMULATION MODE ACTIVE !!!");
 #endif
-        System_Service_UpdateGPS(info.latitude, info.longitude, info.speed_kmh, info.fix_quality, info.satellites,
-                                 info.utc_hour, info.utc_min, info.utc_sec, info.day, info.month, info.year);
+        /* ---- 5. Cập nhật System Service ---- */
+        if (info.is_valid) {
+            System_Service_UpdateGPS(info.latitude, info.longitude, info.speed_kmh, info.fix_quality, info.satellites,
+                                     info.utc_hour, info.utc_min, info.utc_sec, info.day, info.month, info.year,
+                                     POS_SOURCE_GPS);
+        } else {
+            /* Nếu không có Fix, ta không ghi đè tọa độ 0 lên hệ thống để nhường chỗ cho LBS */
+            LOG_WARN("[GPS] No fix, skipping system update to preserve LBS data");
+        }
 
         /* ---- 6. In kết quả ---- */
         if (info.is_valid) {
@@ -218,10 +225,10 @@ static void StartATGM336HTask(void const *argument)
         /* ---- 7. Ngủ theo chu kỳ cấu hình hệ thống ---- */
         SystemConfig_t cfg;
         System_Service_GetConfig(&cfg);
-        uint32_t interval_ms = (cfg.active_interval_s > 0) ? (cfg.active_interval_s * 1000) : 30000;
+        uint32_t interval_ms = (cfg.active_interval_s > 0) ? (cfg.active_interval_s * 1000) : (DEFAULT_ACTIVE_INTERVAL_S * 1000);
         
         /* Giới hạn an toàn để tránh treo task nếu bộ nhớ bị lỗi/rác */
-        if (interval_ms > 3600000) interval_ms = 30000; // Tối đa 1 giờ
+        if (interval_ms > (MAX_REPORT_INTERVAL_S * 1000)) interval_ms = (DEFAULT_ACTIVE_INTERVAL_S * 1000); // Tối đa 1 giờ
         
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(interval_ms));
         

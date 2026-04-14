@@ -6,18 +6,32 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-/**
- * @brief Các trạng thái vận hành chính của hệ thống
- */
+/* ========================================================================================
+ * SECTION: System Default Configurations
+ * ======================================================================================== */
+#define DEFAULT_ACTIVE_INTERVAL_S       10      /**< 10 giây khi di chuyển */
+#define DEFAULT_STATIONARY_INTERVAL_S   30     /**< 5 phút khi đứng yên */
+#define MAX_REPORT_INTERVAL_S           3600    /**< Tối đa 1 tiếng */
+
 typedef enum {
     SYS_MODE_INIT = 0,
     SYS_MODE_ACTIVE,      /**< Đang hoạt động, gửi dữ liệu thường xuyên */
     SYS_MODE_STATIONARY,  /**< Xe đứng yên, đếm ngược để đi ngủ */
     SYS_MODE_SLEEP        /**< Chế độ tiết kiệm điện sâu */
 } SystemMode_t;
-
-/**
- * @brief Loại cảnh báo hệ thống
+ 
+ /**
+  * @brief Nguồn dữ liệu vị trí
+  */
+ typedef enum {
+     POS_SOURCE_NONE = 0,
+     POS_SOURCE_GPS,
+     POS_SOURCE_LBS,
+     POS_SOURCE_NO_FIX
+ } PositionSource_t;
+ 
+ /**
+  * @brief Loại cảnh báo hệ thống
  */
 typedef enum {
     ALERT_NONE = 0,
@@ -87,6 +101,8 @@ typedef struct {
 
     /* Thời điểm cập nhật cuối cùng của GPS */
     uint32_t    last_update_tick; 
+ 
+    PositionSource_t source;    /**< Nguồn dữ liệu vị trí: GPS hoặc LBS */
 } System_GPS_t;
 
 /**
@@ -128,7 +144,9 @@ void System_Service_Init(void);
 void System_Service_GetSnapshot(SystemData_t *out);
 
 void System_Service_UpdateGPS(float lat, float lon, float spd, uint8_t fix, uint8_t sats, 
-                              uint8_t h, uint8_t m, uint8_t s, uint8_t day, uint8_t mon, uint8_t yr);
+                              uint8_t h, uint8_t m, uint8_t s, uint8_t day, uint8_t mon, uint8_t yr,
+                              PositionSource_t source);
+void System_Service_UpdateSource(PositionSource_t source);
 
 void System_Service_UpdateBattery(uint8_t pct, uint16_t mv);
 void System_Service_UpdateMotion(bool moving);
@@ -142,6 +160,7 @@ void System_Service_GetConfig(SystemConfig_t *out);
 void System_Service_UpdateConfig(SystemConfig_t *new_cfg);
 bool System_Service_CheckForceReport(void);
 void System_Service_SetForceReport(bool force);
+void System_Service_VisualNotify(uint8_t count);
 
 int System_Service_ToJSON(char *buf, uint16_t len);
 

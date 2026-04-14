@@ -210,18 +210,50 @@ static SIM_State_t SIM_Handle_ServicesInit(void) {
     return SIM_ST_SERVICES_INIT;
 }
 
+static void prv_MQTT_CommandCallback(MQTT_Message_t *msg);
+
 static SIM_State_t SIM_Handle_MQTTConnect(void) {
     if (MQTT_Service_Connect(&sim_modem) == MQTT_OK) {
-        /* Báo cáo trạng thái Active ngay khi vừa kết nối xong */
-        MQTT_Service_QueuePublish("status", "{\"msg\":\"device_active\"}");
+        /* 1. Báo cáo trạng thái Online kèm thông tin IMEI khi vừa kết nối */
+        char online_json[128];
+        snprintf(online_json, sizeof(online_json), 
+                 "{\"msg\":\"online\",\"imei\":\"%s\",\"ver\":\"1.0.0\"}", g_sim_imei);
+        MQTT_Service_QueuePublish("status", online_json);
         
-        /* Subscribe thử một topic với QoS 1 */
-        MQTT_Service_Subscribe(&sim_modem, "tracker/cmd", MQTT_QOS1, NULL);
+        /* 2. Subscribe vào topic Command riêng của thiết bị: Son/<IMEI>/cmd */
+        char cmd_topic[64];
+        snprintf(cmd_topic, sizeof(cmd_topic), "Son/%s/cmd", g_sim_imei);
+        LOG_INFO("[SIM TASK] Subscribing to: %s", cmd_topic);
+        MQTT_Service_Subscribe(&sim_modem, cmd_topic, MQTT_QOS1, prv_MQTT_CommandCallback);
+        
         return SIM_ST_READY;
     }
     LOG_ERROR("[SIM TASK] MQTT Connection Failed, retrying...");
     osDelay(10000);
     return SIM_ST_MQTT_CONNECT;
+}
+
+/**
+ * @brief Xử lý các lệnh điều khiển từ App Android gửi xuống qua MQTT
+ */
+static void prv_MQTT_CommandCallback(MQTT_Message_t *msg) {
+    if (msg == NULL || msg->payload == NULL) return;
+    
+    LOG_INFO("[SIM TASK] Received Command: %s", (char*)msg->payload);
+    
+    /* Xử lý lệnh JSON đơn giản (Identify / Reboot) */
+    if (strstr((char*)msg->payload, "\"cmd\":\"identify\"") || strstr((char*)msg->payload, "\"cmd\":\"ping\"")) {
+        LOG_INFO("[SIM TASK] Executing Identify command");
+        System_Service_VisualNotify(5); // Nháy LED 5 lần
+    }
+    else if (strstr((char*)msg->payload, "\"cmd\":\"reboot\"")) {
+        LOG_WARN("[SIM TASK] Executing Remote Reboot...");
+        osDelay(1000);
+        HAL_NVIC_SystemReset();
+    }
+    else if (strstr((char*)msg->payload, "\"cmd\":\"force_report\"")) {
+        System_Service_SetForceReport(true);
+    }
 }
 
 static SIM_State_t SIM_Handle_Ready(void) {
@@ -277,14 +309,42 @@ static SIM_State_t SIM_Handle_Ready(void) {
 static void prv_SMS_ReceivedCallback(SMS_Message_t *msg) {
     LOG_INFO("[SIM TASK] SMS Received from %s: %s", msg->phone, msg->content);
     
+    /* 1. Kiểm tra mã xác thực để Add thiết bị (Cấu trúc: "ADD <CODE>") */
+    if (strncmp(msg->content, "ADD", 3) == 0 || strncmp(msg->content, "add", 3) == 0) {
+        char *code_ptr = msg->content + 3;
+        while (*code_ptr == ' ') code_ptr++; // Bỏ qua khoảng trắng ở đầu
+        
+        /* Loại bỏ ký tự xuống dòng và khoảng trắng ở cuối */
+        int len = strlen(code_ptr);
+        while (len > 0 && (code_ptr[len-1] == '\r' || code_ptr[len-1] == '\n' || code_ptr[len-1] == ' ')) {
+            code_ptr[--len] = '\0';
+        }
+
+        if (*code_ptr != '\0') {
+            LOG_INFO("[SIM TASK] Pairing request detected with code: [%s]", code_ptr);
+            
+            /* Nháy LED báo hiệu đã nhận lệnh */
+            System_Service_VisualNotify(3);
+            
+            /* Gửi bản tin xác thực lên Server qua MQTT */
+            char pair_json[200];
+            snprintf(pair_json, sizeof(pair_json), 
+                     "{\"msg\":\"pairing_request\",\"code\":\"%s\",\"phone\":\"%s\"}", 
+                     code_ptr, msg->phone);
+                     
+            MQTT_Service_QueuePublish("status", pair_json);
+            return; // Đã xử lý xong, không cần forward SMS thô nữa
+        }
+    }
+
+    /* 2. Forward các tin nhắn khác lên MQTT (giữ nguyên tính năng cũ) */
     char sms_json[300];
     snprintf(sms_json, sizeof(sms_json), 
              "{\"from\":\"%s\",\"time\":\"%s\",\"content\":\"%s\"}", 
              msg->phone, msg->timestamp, msg->content);
              
-    LOG_INFO("[SIM TASK] Forwarding SMS to MQTT (topic: sms)...");
+    LOG_INFO("[SIM TASK] Forwarding generic SMS to MQTT (topic: sms)...");
     MQTT_Service_QueuePublish("sms", sms_json);
-    
 }
 
 void SIM_Task_SetSleep(bool enable) {

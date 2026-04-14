@@ -3,6 +3,8 @@
 #include "mqtt_service.h"
 #include "imu_service.h"
 #include "w25q32_task.h"
+#include "sim_a7670c.h"
+#include "atgm336h_task.h"
 #include "log.h"
 #include "cmsis_os.h"
 #include <stdio.h>
@@ -11,7 +13,8 @@
  * SECTION: Private Variables
  * ======================================================================================== */
 
-#define STATIONARY_SLEEP_TIMEOUT_S  15  /**< Sau 15s đứng yên thì đi ngủ */
+extern SIM_Handle_t sim_modem;
+#define STATIONARY_SLEEP_TIMEOUT_S      30      /**< Sau 30s đứng yên thì đi ngủ */
 
 /* ========================================================================================
  * SECTION: Private Functions
@@ -79,10 +82,10 @@ static void System_Manager_Entry(void const * argument) {
         /* 3. Logic gửi dữ liệu định kỳ */
         uint32_t current_tick = osKernelSysTick();
         uint32_t interval_ms = (data.mode == SYS_MODE_ACTIVE) ? 
-                               (config.active_interval_s > 0 ? config.active_interval_s * 1000 : 30000) : 
-                               (config.stationary_interval_s > 0 ? config.stationary_interval_s * 1000 : 300000);
+                               (config.active_interval_s > 0 ? config.active_interval_s * 1000 : DEFAULT_ACTIVE_INTERVAL_S * 1000) : 
+                               (config.stationary_interval_s > 0 ? config.stationary_interval_s * 1000 : DEFAULT_STATIONARY_INTERVAL_S * 1000);
 
-        if (interval_ms > 3600000) interval_ms = 30000;
+        if (interval_ms > (MAX_REPORT_INTERVAL_S * 1000)) interval_ms = DEFAULT_ACTIVE_INTERVAL_S * 1000;
 
         bool trigger = false;
         if (!first_report_done) {
@@ -102,6 +105,21 @@ static void System_Manager_Entry(void const * argument) {
         }
 
         if (trigger) {
+            /* 3a. Check GPS status - If no fix, try LBS as fallback */
+            ATGM336H_Info_t gps_info;
+            bool gps_ok = ATGM336H_Task_GetLatestInfo(&gps_info);
+            
+            if (!gps_ok) {
+                LOG_INFO("[SYS_MGR] GPS no fix, triggering LBS fallback...");
+                /* Chỉ kích hoạt truy vấn. Kết quả sẽ được URC handler tự động cập nhật vào System Service. */
+                if (SIM_GetLBSPosition(&sim_modem, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL) == SIM_OK) {
+                    LOG_INFO("[SYS_MGR] LBS query triggered successfully");
+                } else {
+                    LOG_WARN("[SYS_MGR] LBS query failed to trigger");
+                    System_Service_UpdateSource(POS_SOURCE_NO_FIX);
+                }
+            }
+
             static char json_buf[512];
             System_Service_ToJSON(json_buf, sizeof(json_buf));
             MQTT_Service_QueuePublish("data", json_buf);

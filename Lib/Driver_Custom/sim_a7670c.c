@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "log.h"
+#include "system_service.h"
 
 void SIM_Init(SIM_Handle_t *handle, BSP_UART_Handle_t *uart) {
     if (handle == NULL || uart == NULL) return;
@@ -91,8 +92,10 @@ SIM_Status_t SIM_SendATCommandEx(SIM_Handle_t *handle, const char *command, cons
     if (handle == NULL || command == NULL) return SIM_ERROR;
 
     RingBuffer_Flush(&handle->rx_rb);
+    handle->is_waiting_resp = true;
 
     if (BSP_UART_Transmit(handle->uart_handle, (uint8_t*)command, strlen(command), 100) != BSP_UART_OK) {
+        handle->is_waiting_resp = false;
         return SIM_ERROR;
     }
 
@@ -103,11 +106,16 @@ SIM_Status_t SIM_SendATCommandEx(SIM_Handle_t *handle, const char *command, cons
                 RingBuffer_PeekMulti(&handle->rx_rb, (uint8_t*)out_buf, out_len - 1);
                 out_buf[out_len - 1] = '\0';
             }
+            handle->is_waiting_resp = false;
             return SIM_OK;
         }
-        if (RingBuffer_Search(&handle->rx_rb, "ERROR")) return SIM_ERROR;
-        osDelay(10);
+        if (RingBuffer_Search(&handle->rx_rb, "ERROR")) {
+            handle->is_waiting_resp = false;
+            return SIM_ERROR;
+        }
+        osDelay(5); /* Giảm xuống 1ms để bắt phản hồi nhanh nhất có thể */
     }
+    handle->is_waiting_resp = false;
     return SIM_TIMEOUT;
 }
 
@@ -375,7 +383,12 @@ void SIM_RegisterEventCallback(SIM_Handle_t *handle, SIM_EventCallback_t cb) {
 
 void SIM_A7670C_Process(SIM_Handle_t *handle) {
     if (handle == NULL) return;
+    
+    /* Nếu đang chờ phản hồi lệnh AT đồng bộ ở task khác, 
+       tạm dừng xử lý URC để tránh "tranh giành" dữ liệu trong RingBuffer */
+    if (handle->is_waiting_resp) return;
 
+    static bool g_mqtt_rx_ongoing = false;
     char line[256];
     while (RingBuffer_ReadLine(&handle->rx_rb, line, sizeof(line))) {
         /* Bỏ qua các dòng trống */
@@ -383,9 +396,18 @@ void SIM_A7670C_Process(SIM_Handle_t *handle) {
         
         LOG_INFO("[SIM URC] %s", line);
 
-        /* --- 1. Nhóm MQTT --- */
-        /* Định dạng: +CMQPUBLISH: <index>,<topic>,<qos>,<retain>,<dup>,<len>,<data> */
-        if (strstr(line, "+CMQPUBLISH:") != NULL) {
+        /* --- 1. Nhóm MQTT (Hỗ trợ cả MQTT Standard và CMQTT Stack) --- */
+        bool is_mqtt_line = false;
+        if (strstr(line, "+CMQPUBLISH:") != NULL || strstr(line, "+CMQTTRX") != NULL || strstr(line, "+CMQTTCONNLOST:") != NULL) {
+            is_mqtt_line = true;
+            if (strstr(line, "+CMQTTRXSTART:")) g_mqtt_rx_ongoing = true;
+            if (strstr(line, "+CMQTTRXEND:")) g_mqtt_rx_ongoing = false;
+        } else if (g_mqtt_rx_ongoing) {
+            /* Nếu đang trong luồng nhận MQTT, các dòng dữ liệu thô (Topic/Payload) cũng phải được gửi đi */
+            is_mqtt_line = true;
+        }
+
+        if (is_mqtt_line) {
             if (handle->event_cb) {
                 SIM_Message_t msg;
                 msg.event = SIM_EVENT_MQTT_MSG;
@@ -393,11 +415,11 @@ void SIM_A7670C_Process(SIM_Handle_t *handle) {
                 msg.len = strlen(line);
                 handle->event_cb(&msg);
             }
+            continue;
         }
         
         /* --- 2. Nhóm SMS --- */
-        /* Định dạng: +CMTI: "SM",<index> HOẶC +CMT: ... */
-        else if (strstr(line, "+CMTI:") != NULL || strstr(line, "+CMT:") != NULL) {
+        if (strstr(line, "+CMTI:") != NULL || strstr(line, "+CMT:") != NULL) {
             if (handle->event_cb) {
                 SIM_Message_t msg;
                 msg.event = SIM_EVENT_SMS_MSG;
@@ -429,7 +451,43 @@ void SIM_A7670C_Process(SIM_Handle_t *handle) {
             }
         }
         
-        /* --- 4. Nhóm Hệ thống (Reboot/Ready) --- */
+        /* --- 4. Nhóm LBS (Vị trí trạm phát sóng) --- */
+        else if (strstr(line, "+CLBS:") != NULL) {
+            float lbs_lat = 0, lbs_lon = 0;
+            int res = -1, prec = 0;
+            int ty=0, tmon=0, td=0, th=0, tmin=0, ts=0;
+
+            /* Thử parse định dạng đầy đủ (10 trường) */
+            int matched = sscanf(line, "+CLBS: %d,%f,%f,%d,%d/%d/%d,%d:%d:%d", 
+                                 &res, &lbs_lat, &lbs_lon, &prec, &ty, &tmon, &td, &th, &tmin, &ts);
+            
+            if (matched < 10) {
+                /* Nếu không đủ 10, thử parse định dạng ngắn (4 trường) */
+                matched = sscanf(line, "+CLBS: %d,%f,%f,%d", &res, &lbs_lat, &lbs_lon, &prec);
+            }
+
+            if (res == 0 && matched >= 3) {
+                LOG_INFO("[SIM] LBS URC Auto-Update: %.6f, %.6f", lbs_lat, lbs_lon);
+                
+                /* Lấy dữ liệu snapshot hiện tại để giữ lại thông tin thời gian nếu LBS không có time */
+                SystemData_t data;
+                System_Service_GetSnapshot(&data);
+                
+                if (matched < 10) {
+                    ty = data.gps.year; tmon = data.gps.month; td = data.gps.day;
+                    th = data.gps.hour; tmin = data.gps.min; ts = data.gps.sec;
+                }
+
+                System_Service_UpdateGPS(lbs_lat, lbs_lon, 0, 1, 0, 
+                                        (uint8_t)th, (uint8_t)tmin, (uint8_t)ts, 
+                                        (uint8_t)td, (uint8_t)tmon, (uint8_t)ty, 
+                                        POS_SOURCE_LBS);
+            } else {
+                LOG_WARN("[SIM] LBS URC parsing failed: %s", line);
+            }
+        }
+        
+        /* --- 5. Nhóm Hệ thống (Reboot/Ready) --- */
         else if (strstr(line, "*ATREADY: 1") != NULL) {
             LOG_WARN("[SIM] Modem Reboot Detected (*ATREADY)");
             if (handle->event_cb) {
@@ -452,4 +510,15 @@ SIM_Status_t SIM_MQTT_IsConnected(SIM_Handle_t *handle) {
         }
     }
     return SIM_ERROR;
+}
+
+SIM_Status_t SIM_GetLBSPosition(SIM_Handle_t *handle, float *lat, float *lon,
+                                 uint8_t *y, uint8_t *mon, uint8_t *d,
+                                 uint8_t *h, uint8_t *min, uint8_t *s) {
+    if (handle == NULL) return SIM_ERROR;
+
+    /* AT+CLBS=1: Kích hoạt truy vấn vị trí. 
+       Kết quả sẽ được trả về dạng URC (+CLBS: ...) và được xử lý tự động trong SIM_A7670C_Process.
+       Hàm này trả về OK nếu module chấp nhận lệnh. */
+    return SIM_SendATCommand(handle, "AT+CLBS=1\r\n", "OK", 5000);
 }
