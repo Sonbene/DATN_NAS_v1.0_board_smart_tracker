@@ -33,6 +33,7 @@
 #include "system_service.h"
 #include "system_manager_task.h"
 #include "log.h"
+#include "power_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -211,9 +212,13 @@ int main(void)
   Battery_Task_Init(&hadc1, ADC_CHANNEL_6);
   SIM_Task_Init(&huart2);
   System_Manager_Task_Init();
+  Power_Task_Init();
 
   
   LOG_INFO("[MAIN] All components initialized and ready");
+  
+  /* Tắt LED PC13 (SET = OFF cho active-low). LED chỉ sáng khi vào STOP Mode 2. */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 
   /* USER CODE END 2 */
 

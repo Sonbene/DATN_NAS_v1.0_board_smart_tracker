@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "system_service.h"
+#include "power_task.h"
 
 /* State Machine */
 typedef enum {
@@ -182,6 +183,25 @@ static SIM_State_t SIM_Handle_WaitNet(void) {
 static SIM_State_t SIM_Handle_ServicesInit(void) {
     LOG_INFO("[SIM TASK] Initializing services (MQTT & SMS)...");
     
+    /* Đồng bộ thời gian từ trạm lưu động (nếu có) trước khi chạy dịch vụ */
+    char cclk_resp[64];
+    if (SIM_SendATCommandEx(&sim_modem, "AT+CCLK?\r\n", "OK", cclk_resp, sizeof(cclk_resp), 2000) == SIM_OK) {
+        char *p = strstr(cclk_resp, "+CCLK: \"");
+        if (p) {
+            p += 8; /* Bỏ qua '+CCLK: "' */
+            int yr, mon, day, hr, min, sec;
+            if (sscanf(p, "%02d/%02d/%02d,%02d:%02d:%02d", &yr, &mon, &day, &hr, &min, &sec) == 6) {
+                /* Lọc bỏ thời gian rác khi module chưa có sóng mạng đồng bộ (vd: năm 70 tức 1970) */
+                if (yr >= 24 && yr < 70) {
+                    LOG_INFO("[SIM TASK] Network Time Synced: 20%02d-%02d-%02d %02d:%02d:%02d", yr, mon, day, hr, min, sec);
+                    System_Service_UpdateTime(hr, min, sec, day, mon, yr);
+                } else {
+                    LOG_WARN("[SIM TASK] Invalid Network Time (yr=%d). Waiting for GPS/NITZ...", yr);
+                }
+            }
+        }
+    }
+    
     MQTT_Config_t mqtt_cfg = {
         .client_index = 0,
         .host = MQTT_BROKER_HOST,
@@ -294,12 +314,6 @@ static SIM_State_t SIM_Handle_Ready(void) {
         MQTT_Service_FreeMail(mail);
     }
     
-    if (g_modem_needs_init) {
-        g_modem_needs_init = false;
-        LOG_INFO("[SIM TASK] Redirecting to Power-On due to modem reset...");
-        return SIM_ST_POWER_ON;
-    }
-
     return SIM_ST_READY;
 }
 
@@ -348,8 +362,48 @@ static void prv_SMS_ReceivedCallback(SMS_Message_t *msg) {
 }
 
 void SIM_Task_SetSleep(bool enable) {
-    /* Sleep functionality removed to keep system active. */
-    (void)enable;
+    if (enable) {
+        LOG_INFO("[SIM TASK] Entering Sleep Mode (DTR HIGH)...");
+        /* Cấu hình SIM ngủ khi DTR High (AT+CSCLK=1) */
+        SIM_SendATCommand(&sim_modem, "AT+CSCLK=1\r\n", "OK", 1000);
+        osDelay(100);
+        /* Kéo chân DTR (PA6) lên mức CAO để module vào Sleep */
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
+    } else {
+        LOG_INFO("[SIM TASK] Waking up from Sleep (DTR LOW)...");
+        
+        /* Bước 1: Kéo DTR xuống THẤP để đánh thức module */
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+        
+        /* Bước 2: Chờ module tỉnh (A7670C cần 500ms+ sau DTR LOW) */
+        osDelay(500);
+        
+        /* Bước 3: Gửi AT test với retry để đảm bảo module phản hồi.
+         * Lệnh AT đầu tiên thường bị bỏ qua do UART chưa ổn định. */
+        bool is_alive = false;
+        for (int retry = 0; retry < 5; retry++) {
+            if (SIM_TestAlive(&sim_modem) == SIM_OK) {
+                is_alive = true;
+                LOG_INFO("[SIM TASK] Module alive after %d retries", retry);
+                break;
+            }
+            LOG_WARN("[SIM TASK] Wakeup AT retry %d/5...", retry + 1);
+            osDelay(500);
+        }
+        
+        if (is_alive) {
+            /* Bước 4: Tắt chế độ slow clock */
+            SIM_SendATCommand(&sim_modem, "AT+CSCLK=0\r\n", "OK", 1000);
+            LOG_INFO("[SIM TASK] CSCLK=0 sent. Module fully awake.");
+        } else {
+            LOG_ERROR("[SIM TASK] Module NOT responding! Triggering hard reset...");
+        }
+        
+        /* Bước 5: MQTTT session chắc chắn đã chết (broker timeout keepalive).
+         * Yêu cầu SIM Task đi qua lại trình khởi tạo đầy đủ để reconnect. */
+        g_modem_needs_init = true;
+        LOG_INFO("[SIM TASK] Modem re-init flagged for MQTT recovery.");
+    }
 }
 
 static void SIM_Task_Entry(void const * argument) {
@@ -366,6 +420,11 @@ static void SIM_Task_Entry(void const * argument) {
     SIM_RegisterEventCallback(&sim_modem, SIM_Event_Callback);
 
     while (1) {
+        /* Cập nhật Cờ bận/rảnh cho Power Task.
+         * Chỉ quan tâm g_sim_task_busy (đang gửi AT command),
+         * KHÔNG phụ thuộc MQTT stable vì khi Sleep ta sẽ tắt module SIM bằng DTR. */
+        Power_Task_SetState(POWER_BIT_SIM, !g_sim_task_busy);
+        
         /* Đợi ngắt RI hoặc Timeout 100ms để polling */
         osSignalWait(SIM_SIG_RI, 100);
         
@@ -379,6 +438,15 @@ static void SIM_Task_Entry(void const * argument) {
             last_stats_tick = xTaskGetTickCount();
         }
 #endif
+        
+        /* Kiểm tra cờ yêu cầu khởi tạo lại modem (từ SIM_Task_SetSleep wakeup).
+         * Cờ này cần check ở ĐÂY (ngoài state machine) để hoạt động ở MỌI state,
+         * không chỉ riêng READY. Skip hard reset → đi thẳng CHECK_COMM cho nhanh. */
+        if (g_modem_needs_init) {
+            g_modem_needs_init = false;
+            LOG_WARN("[SIM TASK] Modem re-init requested. Jumping to CHECK_COMM...");
+            state = SIM_ST_CHECK_COMM;
+        }
         
         switch (state) {
             case SIM_ST_POWER_ON:     state = SIM_Handle_PowerOn();      break;

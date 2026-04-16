@@ -118,6 +118,21 @@ void System_Service_UpdateGPS(float lat, float lon, float spd, uint8_t fix, uint
     osMutexRelease(g_sys_data.mutex);
 }
 
+void System_Service_UpdateTime(uint8_t h, uint8_t m, uint8_t s, uint8_t day, uint8_t mon, uint8_t yr) {
+    if (g_sys_data.mutex == NULL) return;
+    osMutexWait(g_sys_data.mutex, 100);
+    
+    g_sys_data.gps.hour = h;
+    g_sys_data.gps.min = m;
+    g_sys_data.gps.sec = s;
+    g_sys_data.gps.day = day;
+    g_sys_data.gps.month = mon;
+    g_sys_data.gps.year = yr;
+    g_sys_data.gps.utc_epoch = prv_ConvertToEpoch(h, m, s, day, mon, yr);
+    
+    osMutexRelease(g_sys_data.mutex);
+}
+
 void System_Service_UpdateSource(PositionSource_t source) {
     if (g_sys_data.mutex == NULL) return;
     osMutexWait(g_sys_data.mutex, 100);
@@ -221,13 +236,21 @@ int System_Service_ToJSON(char *buf, uint16_t len) {
     int written = 0;
     osMutexWait(g_sys_data.mutex, osWaitForever);
     
-    /* Format JSON trực tiếp từ biến toàn cục để tránh lỗi copy Stack */
+    /* Đảm bảo timestamp luôn là một ngày hợp lệ (tránh 2000-00-00 làm crash server/DB) */
+    uint8_t y = g_sys_data.gps.year;
+    uint8_t m = g_sys_data.gps.month;
+    uint8_t d = g_sys_data.gps.day;
+    if (y < 24 || m == 0 || d == 0) {
+        y = 24; m = 1; d = 1;
+    }
+    
+    /* Format JSON trực tiếp từ biến toàn cục */
     written = snprintf(buf, len, 
         "{\"id\":\"%s\",\"lat\":%.6f,\"lon\":%.6f,\"spd\":%.1f,\"bat\":%d,\"st\":%d,\"src\":\"%s\",\"ts\":\"20%02d-%02d-%02d %02d:%02d:%02d\"}",
         g_sys_data.imei, g_sys_data.gps.lat, g_sys_data.gps.lon, g_sys_data.gps.speed, 
         g_sys_data.sensor.battery_pct, (int)g_sys_data.mode,
         g_sys_data.gps.source == POS_SOURCE_LBS ? "LBS" : (g_sys_data.gps.source == POS_SOURCE_NO_FIX ? "NO_FIX" : "GPS"),
-        g_sys_data.gps.year, g_sys_data.gps.month, g_sys_data.gps.day,
+        y, m, d,
         g_sys_data.gps.hour, g_sys_data.gps.min, g_sys_data.gps.sec);
     
     osMutexRelease(g_sys_data.mutex);

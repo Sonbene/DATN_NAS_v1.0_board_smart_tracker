@@ -5,6 +5,7 @@
 #include "FreeRTOS.h"
 #include <string.h>
 #include "system_service.h"
+#include "power_task.h"
 
 
 
@@ -146,6 +147,9 @@ static void StartATGM336HTask(void const *argument)
 
 
     for (;;) {
+        /* Task đang chạy -> BÁO BẬN */
+        Power_Task_SetState(POWER_BIT_GPS, false);
+
         /* ---- 1. Bật DMA + IDLE detection ---- */
         /* Xóa sạch cờ lỗi (Overrun, Framing, Noise) trước khi bắt đầu */
         __HAL_UART_CLEAR_IT(gps_uart_bus.huart, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_FEF | UART_CLEAR_PEF);
@@ -230,6 +234,8 @@ static void StartATGM336HTask(void const *argument)
         /* Giới hạn an toàn để tránh treo task nếu bộ nhớ bị lỗi/rác */
         if (interval_ms > (MAX_REPORT_INTERVAL_S * 1000)) interval_ms = (DEFAULT_ACTIVE_INTERVAL_S * 1000); // Tối đa 1 giờ
         
+        /* Task đang chờ -> BÁO RẢNH */
+        Power_Task_SetState(POWER_BIT_GPS, true);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(interval_ms));
         
     }
@@ -269,10 +275,20 @@ bool ATGM336H_Task_GetLatestInfo(ATGM336H_Info_t *out)
 }
 
 void ATGM336H_Task_Standby(bool enable) {
-    /* Standby functionality removed to keep GPS active. */
-    (void)enable;
+    if (enable) {
+        LOG_INFO("[GPS] Entering Standby mode...");
+        /* Gửi lệnh Standby (Lệnh PCAS cho chip CASIC hoặc PMTK cho thông dụng) */
+        char *cmd = "$PCAS04,1*1A\r\n";
+        BSP_UART_Transmit(&gps_uart_bus, (uint8_t*)cmd, strlen(cmd), 100);
+    } else {
+        LOG_INFO("[GPS] Waking up from Standby...");
+        /* Gửi chuỗi bất kỳ để đánh thức */
+        char *cmd = "\r\n";
+        BSP_UART_Transmit(&gps_uart_bus, (uint8_t*)cmd, strlen(cmd), 100);
+        osDelay(100); // Cho chip boot lại
+    }
 }
 
 void ATGM336H_Task_Wakeup(void) {
-    /* Wakeup functionality removed. */
+    /* Đã xử lý trong ATGM336H_Task_Standby(false) */
 }

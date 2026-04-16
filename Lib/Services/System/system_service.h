@@ -146,6 +146,9 @@ void System_Service_GetSnapshot(SystemData_t *out);
 void System_Service_UpdateGPS(float lat, float lon, float spd, uint8_t fix, uint8_t sats, 
                               uint8_t h, uint8_t m, uint8_t s, uint8_t day, uint8_t mon, uint8_t yr,
                               PositionSource_t source);
+                              
+void System_Service_UpdateTime(uint8_t h, uint8_t m, uint8_t s, uint8_t day, uint8_t mon, uint8_t yr);
+
 void System_Service_UpdateSource(PositionSource_t source);
 
 void System_Service_UpdateBattery(uint8_t pct, uint16_t mv);

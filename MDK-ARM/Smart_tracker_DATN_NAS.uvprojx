@@ -851,6 +851,16 @@
               <FileType>5</FileType>
               <FilePath>..\Lib\Task\system_manager_task.h</FilePath>
             </File>
+            <File>
+              <FileName>power_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\Task\power_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>power_task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Lib\Task\power_task.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

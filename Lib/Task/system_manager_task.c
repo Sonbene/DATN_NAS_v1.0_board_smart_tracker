@@ -8,6 +8,7 @@
 #include "log.h"
 #include "cmsis_os.h"
 #include <stdio.h>
+#include "power_task.h"
 
 /* ========================================================================================
  * SECTION: Private Variables
@@ -47,6 +48,9 @@ static void System_Manager_Entry(void const * argument) {
     SystemMode_t last_mode = SYS_MODE_INIT;
 
     while (1) {
+        /* Task đang chạy -> BÁO BẬN */
+        Power_Task_SetState(POWER_BIT_SYS_MGR, false);
+
         /* 1. Cập nhật trạng thái hệ thống (ACTIVE/STATIONARY) */
         System_Service_UpdateMotion(IMU_Service_IsMoving());
         System_Service_UpdateState();
@@ -70,11 +74,7 @@ static void System_Manager_Entry(void const * argument) {
         /* 2b. Quản lý bộ đếm thời gian đứng yên để đi ngủ */
         if (data.mode == SYS_MODE_STATIONARY) {
             stationary_seconds++;
-            if (stationary_seconds >= STATIONARY_SLEEP_TIMEOUT_S) {
-                /* System no longer enters sleep mode. Just reset the counter or do nothing. */
-                stationary_seconds = 0; 
-                LOG_INFO("[SYS_MGR] System remains active (Sleep Disabled)");
-            }
+            /* Tính năng đếm giờ và Sleep đã được chuyển sang Power_Task_Entry trong power_task.c */
         } else {
             stationary_seconds = 0;
         }
@@ -149,6 +149,9 @@ static void System_Manager_Entry(void const * argument) {
 
         /* 5. Xử lý lệnh từ App (Stub) */
         Handle_AppCommands();
+        
+        /* Task chuẩn bị Delay -> BÁO RẢNH */
+        Power_Task_SetState(POWER_BIT_SYS_MGR, true);
         osDelay(1000);
     }
 }
