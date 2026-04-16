@@ -227,5 +227,8 @@ static void Power_EnablePeripherals(void) {
     /* 4. Khôi phục SIM UART + khởi động lại DMA Circular RX */
     HAL_UART_Init(&huart2);
     SIM_Task_RestoreUART();
+
 }
+
+
 
