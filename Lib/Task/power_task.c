@@ -6,6 +6,7 @@
 #include "event_groups.h"
 #include "atgm336h_task.h"
 #include "sim_task.h"
+#include "mqtt_service.h"
 
 /* ========================================================================================
  * SECTION: Private Variables
@@ -66,6 +67,16 @@ static void Power_Task_Entry(void const * argument) {
         if (data.mode == SYS_MODE_STATIONARY) {
             park_counter++;
             
+            /* Ở giây 30 chẵn, gửi thông điệp báo Sleep lên server */
+            if (park_counter == 30) {
+                LOG_INFO("[POWER TASK] Sending sleep notification to server...");
+                MQTT_Service_QueuePublish("status", "{\"status\":\"sleeping\"}");
+                
+                /* Báo bận SIMTask ngay lập tức để chặn PowerTask sleep luôn trong next loop,
+                 * phải chờ SIMTask nhận mail, gửi xong, rồi SIMTask tự báo rảnh lại. */
+                Power_Task_SetState(POWER_BIT_SIM, false);
+            }
+            
             /* SAU 30 GIÂY THÌ VÀO MODE WAIT TO SLEEP */
             if (park_counter >= 30) {
                 
@@ -85,15 +96,23 @@ static void Power_Task_Entry(void const * argument) {
                     /* Chờ để Log kịp xả ra UART */
                     osDelay(200);
                     
+                    /* KIỂM TRA LẠI LẦN NỮA (Phòng TOCTOU): 
+                     * Đề phòng SysManager vừa đẩy Mail cho SIMTask trong lúc ta delay */
+                    uxBits = xEventGroupGetBits(g_PowerEventGroup);
+                    if ((uxBits & POWER_BITS_ALL) != POWER_BITS_ALL) {
+                        LOG_WARN("[POWER TASK] Tasks became busy (%X) during prep. Aborting sleep!", (unsigned int)uxBits);
+                        continue;
+                    }
+                    
                     /* ----- BƯỚC 1: ĐƯA MODULE NGOẠI VI VÀO CHẾ ĐỘ TIẾT KIỆM ----- */
                     ATGM336H_Task_Standby(true);
                     LOG_INFO("[POWER TASK] GPS -> Standby OK");
                     
                     SIM_Task_SetSleep(true);
-                    LOG_INFO("[POWER TASK] SIM -> Sleep OK (DTR HIGH)");
+                    LOG_INFO("[POWER TASK] SIM -> Power Off OK");
                     
-                    /* Chờ SIM module xử lý xong lệnh AT+CSCLK & phản hồi OK */
-                    osDelay(500);
+                    /* Chờ module tắt nguồn hoàn toàn */
+                    osDelay(1000);
                     
                     LOG_INFO("[POWER TASK] Disabling MCU peripherals...");
                     osDelay(100); /* Cho Log cuối cùng kịp in */
@@ -162,9 +181,8 @@ static void Power_Task_Entry(void const * argument) {
                     LOG_INFO("[POWER TASK] Clock & peripherals restored.");
                     
                     /* ----- BƯỚC 6: ĐÁNH THỨC MODULE NGOẠI VI ----- */
-                    /* SIM_Task_SetSleep(false) tự xử lý: DTR LOW → AT retry → CSCLK=0 → flag modem_needs_init */
                     SIM_Task_SetSleep(false);
-                    LOG_INFO("[POWER TASK] SIM wakeup sequence done.");
+                    LOG_INFO("[POWER TASK] SIM power-on sequence triggered.");
                     
                     ATGM336H_Task_Standby(false);
                     LOG_INFO("[POWER TASK] GPS -> Wakeup OK");
@@ -218,7 +236,7 @@ static void Power_EnablePeripherals(void) {
     /* 1. Khôi phục UART Debug (LOG) — ưu tiên bật đầu tiên để debug */
     HAL_UART_Init(&huart3);
     
-    /* 2. Khôi phục ADC */
+    /* 2. Khôi phục ADC (bỏ qua lệnh Calibrate vì sụt áp đầu chu kỳ Wakeup sẽ làm sai lệch Offset) */
     HAL_ADC_Init(&hadc1);
     
     /* 3. Khôi phục GPS UART */

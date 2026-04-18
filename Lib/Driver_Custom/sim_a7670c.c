@@ -91,11 +91,17 @@ void SIM_HardReset(SIM_Handle_t *handle) {
 SIM_Status_t SIM_SendATCommandEx(SIM_Handle_t *handle, const char *command, const char *expected_response, char *out_buf, uint16_t out_len, uint32_t timeout_ms) {
     if (handle == NULL || command == NULL) return SIM_ERROR;
 
+    /* Dùng Mutex để khoá độc quyền UART, ngăn chặn Race Condition khi nhiều Task gọi lệnh AT */
+    if (BSP_UART_LockTx(handle->uart_handle, timeout_ms) != BSP_UART_OK) {
+        return SIM_BUSY;
+    }
+
     RingBuffer_Flush(&handle->rx_rb);
     handle->is_waiting_resp = true;
 
     if (BSP_UART_Transmit(handle->uart_handle, (uint8_t*)command, strlen(command), 100) != BSP_UART_OK) {
         handle->is_waiting_resp = false;
+        BSP_UART_UnlockTx(handle->uart_handle);
         return SIM_ERROR;
     }
 
@@ -107,15 +113,18 @@ SIM_Status_t SIM_SendATCommandEx(SIM_Handle_t *handle, const char *command, cons
                 out_buf[out_len - 1] = '\0';
             }
             handle->is_waiting_resp = false;
+            BSP_UART_UnlockTx(handle->uart_handle);
             return SIM_OK;
         }
         if (RingBuffer_Search(&handle->rx_rb, "ERROR")) {
             handle->is_waiting_resp = false;
+            BSP_UART_UnlockTx(handle->uart_handle);
             return SIM_ERROR;
         }
         osDelay(5); /* Giảm xuống 1ms để bắt phản hồi nhanh nhất có thể */
     }
     handle->is_waiting_resp = false;
+    BSP_UART_UnlockTx(handle->uart_handle);
     return SIM_TIMEOUT;
 }
 
@@ -277,7 +286,8 @@ SIM_Status_t SIM_DeleteSMS(SIM_Handle_t *handle, int index) {
 }
 
 SIM_Status_t SIM_PowerDown(SIM_Handle_t *handle) {
-    return SIM_SendATCommand(handle, "AT+CPOWD=1\r\n", "NORMAL POWER DOWN", 5000);
+    /* Lệnh tắt nguồn cho SIMCom A7670C là AT+CPOF (Trả về OK rồi sập nguồn) */
+    return SIM_SendATCommand(handle, "AT+CPOF\r\n", "OK", 5000);
 }
 
 SIM_Status_t SIM_SetSleepMode(SIM_Handle_t *handle, bool enable) {
@@ -312,11 +322,17 @@ SIM_Status_t SIM_SetSleepMode(SIM_Handle_t *handle, bool enable) {
 SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const uint8_t *data, uint16_t data_len, const char *expected_response, uint32_t prompt_timeout_ms, uint32_t resp_timeout_ms) {
     if (handle == NULL || command == NULL || data == NULL) return SIM_ERROR;
 
+    /* Dùng Mutex để khoá độc quyền UART, đảm bảo không ai xen ngang AT+CLBS=1 vào giữa quá trình gửi Payload */
+    if (BSP_UART_LockTx(handle->uart_handle, prompt_timeout_ms + resp_timeout_ms) != BSP_UART_OK) {
+        return SIM_BUSY;
+    }
+
     RingBuffer_Flush(&handle->rx_rb);
 
     /* 1. Gửi lệnh AT */
     LOG_INFO("[SIM] AT Send (Wait Prompt): %s", command);
     if (BSP_UART_Transmit(handle->uart_handle, (uint8_t*)command, strlen(command), 100) != BSP_UART_OK) {
+        BSP_UART_UnlockTx(handle->uart_handle);
         return SIM_ERROR;
     }
 
@@ -330,6 +346,7 @@ SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const
         }
         if (RingBuffer_Search(&handle->rx_rb, "ERROR") || RingBuffer_Search(&handle->rx_rb, "+CME ERROR")) {
             LOG_ERROR("[SIM] Command rejected with ERROR (no prompt)");
+            BSP_UART_UnlockTx(handle->uart_handle);
             return SIM_ERROR;
         }
         osDelay(10);
@@ -337,6 +354,7 @@ SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const
 
     if (!prompt_received) {
         LOG_ERROR("[SIM] Timeout waiting for '>' prompt");
+        BSP_UART_UnlockTx(handle->uart_handle);
         return SIM_TIMEOUT;
     }
 
@@ -346,6 +364,7 @@ SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const
     /* 3. Phản hồi Payload */
     LOG_INFO("[SIM] Prompt received (>), sending %d bytes payload...", data_len);
     if (BSP_UART_Transmit(handle->uart_handle, (uint8_t*)data, data_len, 500) != BSP_UART_OK) {
+        BSP_UART_UnlockTx(handle->uart_handle);
         return SIM_ERROR;
     }
 
@@ -353,18 +372,22 @@ SIM_Status_t SIM_SendATWithData(SIM_Handle_t *handle, const char *command, const
     start_time = HAL_GetTick();
     while (HAL_GetTick() - start_time < resp_timeout_ms) {
         if (expected_response != NULL && RingBuffer_Search(&handle->rx_rb, expected_response)) {
+            BSP_UART_UnlockTx(handle->uart_handle);
             return SIM_OK;
         }
         if (expected_response == NULL && RingBuffer_Search(&handle->rx_rb, "OK")) {
+            BSP_UART_UnlockTx(handle->uart_handle);
             return SIM_OK;
         }
         if (RingBuffer_Search(&handle->rx_rb, "ERROR")) {
+            BSP_UART_UnlockTx(handle->uart_handle);
             return SIM_ERROR;
         }
         osDelay(10);
     }
 
     LOG_ERROR("[SIM] Data Response Timeout");
+    BSP_UART_UnlockTx(handle->uart_handle);
     return SIM_TIMEOUT;
 }
 

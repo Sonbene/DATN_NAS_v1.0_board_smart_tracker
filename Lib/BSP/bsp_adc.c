@@ -23,7 +23,17 @@ BSP_ADC_Status_t BSP_ADC_Read_DMA(BSP_ADC_Handle_t *handle, uint32_t timeout_ms)
         return BSP_ADC_ERROR;
     }
 
-    /* 1. Bật chế độ Continuous để đo nhanh 64 mẫu liên tục */
+    /* 1. Đảm bảo cấu hình đúng Channel (Rất quan trọng vì Wakeup làm mất cấu hình kênh của ADC1->SQR) */
+    ADC_ChannelConfTypeDef sConfig = {0};
+    sConfig.Channel = handle->channel;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5; // Khớp với main.c
+    sConfig.SingleDiff = ADC_SINGLE_ENDED;
+    sConfig.OffsetNumber = ADC_OFFSET_NONE;
+    sConfig.Offset = 0;
+    HAL_ADC_ConfigChannel(handle->hadc, &sConfig);
+
+    /* 2. Bật chế độ Continuous để đo nhanh 64 mẫu liên tục */
     handle->hadc->Instance->CFGR |= ADC_CFGR_CONT;
 
     /* 2. Bắt đầu đo DMA */
