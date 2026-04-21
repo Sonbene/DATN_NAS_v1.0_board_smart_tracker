@@ -13,6 +13,16 @@
 #define DEFAULT_STATIONARY_INTERVAL_S   30     /**< 5 phút khi đứng yên */
 #define MAX_REPORT_INTERVAL_S           3600    /**< Tối đa 1 tiếng */
 
+/* Abstraction cho chân khóa xe (Relay) */
+#define VEHICLE_LOCK_PORT               GPIOA
+#define VEHICLE_LOCK_PIN                GPIO_PIN_12
+
+/**
+ * @brief Macro điều khiển khóa xe (Dễ dàng thay đổi logic Active-High/Low tại đây)
+ */
+#define SYSTEM_LOCK_VEHICLE()           HAL_GPIO_WritePin(VEHICLE_LOCK_PORT, VEHICLE_LOCK_PIN, GPIO_PIN_SET)
+#define SYSTEM_UNLOCK_VEHICLE()         HAL_GPIO_WritePin(VEHICLE_LOCK_PORT, VEHICLE_LOCK_PIN, GPIO_PIN_RESET)
+
 typedef enum {
     SYS_MODE_INIT = 0,
     SYS_MODE_ACTIVE,      /**< Đang hoạt động, gửi dữ liệu thường xuyên */
@@ -118,6 +128,7 @@ typedef struct {
 
     /* Nhóm Cảnh báo & An ninh */
     bool        is_armed;       /**< Chế độ chống trộm đang bật/tắt */
+    bool        is_locked;      /**< Trạng thái vật lý của khóa xe (GPIO PA12) */
     AlertType_t alert_type;     /**< Loại cảnh báo hiện tại */
     Severity_t  alert_remain;   /**< Mức độ nghiêm trọng (nếu có) */
     uint32_t    alert_tick;     /**< Thời điểm xảy ra cảnh báo */
@@ -136,6 +147,10 @@ typedef struct {
     
     uint32_t        sys_uptime; /**< Thời gian hoạt động của hệ thống (giây) */
     bool            force_report; /**< Cờ yêu cầu gửi báo cáo tức thì */
+    
+    /* Command từ Server (Lock/Unlock) */
+    bool            lock_request_pending; /**< Cờ có yêu cầu đổi trạng thái khóa */
+    bool            target_lock_state;    /**< Trạng thái mong muốn (true = Lock) */
 } SystemData_t;
 
 /* --- API Prototype cho System Service --- */
@@ -164,6 +179,11 @@ void System_Service_UpdateConfig(SystemConfig_t *new_cfg);
 bool System_Service_CheckForceReport(void);
 void System_Service_SetForceReport(bool force);
 void System_Service_VisualNotify(uint8_t count);
+
+/* Lock Control API */
+void System_Service_RequestLock(bool lock);
+void System_Service_UpdateLockStatus(bool locked);
+void System_Service_ClearLockRequest(void);
 
 int System_Service_ToJSON(char *buf, uint16_t len);
 

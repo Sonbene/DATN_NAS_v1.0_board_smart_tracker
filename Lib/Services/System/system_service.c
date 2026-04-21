@@ -61,6 +61,9 @@ void System_Service_Init(void) {
     g_sys_data.mode = SYS_MODE_INIT;
     g_sys_data.gps.source = POS_SOURCE_NO_FIX;
     g_sys_data.force_report = false;
+    g_sys_data.lock_request_pending = false;
+    g_sys_data.target_lock_state = false;
+    g_sys_data.sensor.is_locked = false;
     g_sys_data.sensor.imu_update_tick = osKernelSysTick(); // Khởi đầu mốc thời gian im lặng
     strncpy(g_sys_data.imei, "UNKNOWN", sizeof(g_sys_data.imei) - 1);
     
@@ -295,4 +298,26 @@ void System_Service_VisualNotify(uint8_t count) {
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);   // Led OFF
         osDelay(150);
     }
+}
+
+void System_Service_RequestLock(bool lock) {
+    if (g_sys_data.mutex == NULL) return;
+    osMutexWait(g_sys_data.mutex, 100);
+    g_sys_data.lock_request_pending = true;
+    g_sys_data.target_lock_state = lock;
+    osMutexRelease(g_sys_data.mutex);
+}
+
+void System_Service_UpdateLockStatus(bool locked) {
+    if (g_sys_data.mutex == NULL) return;
+    osMutexWait(g_sys_data.mutex, 100);
+    g_sys_data.sensor.is_locked = locked;
+    osMutexRelease(g_sys_data.mutex);
+}
+
+void System_Service_ClearLockRequest(void) {
+    if (g_sys_data.mutex == NULL) return;
+    osMutexWait(g_sys_data.mutex, 100);
+    g_sys_data.lock_request_pending = false;
+    osMutexRelease(g_sys_data.mutex);
 }

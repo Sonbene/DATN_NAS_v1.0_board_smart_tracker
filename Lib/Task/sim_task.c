@@ -231,6 +231,7 @@ static SIM_State_t SIM_Handle_ServicesInit(void) {
 }
 
 static void prv_MQTT_CommandCallback(MQTT_Message_t *msg);
+static void prv_MQTT_LockCallback(MQTT_Message_t *msg);
 
 static SIM_State_t SIM_Handle_MQTTConnect(void) {
     if (MQTT_Service_Connect(&sim_modem) == MQTT_OK) {
@@ -245,6 +246,12 @@ static SIM_State_t SIM_Handle_MQTTConnect(void) {
         snprintf(cmd_topic, sizeof(cmd_topic), "Son/%s/cmd", g_sim_imei);
         LOG_INFO("[SIM TASK] Subscribing to: %s", cmd_topic);
         MQTT_Service_Subscribe(&sim_modem, cmd_topic, MQTT_QOS1, prv_MQTT_CommandCallback);
+        
+        /* 3. Subscribe vào topic Lock riêng của thiết bị: Son/<IMEI>/lock */
+        char lock_topic[64];
+        snprintf(lock_topic, sizeof(lock_topic), "Son/%s/lock", g_sim_imei);
+        LOG_INFO("[SIM TASK] Subscribing to: %s", lock_topic);
+        MQTT_Service_Subscribe(&sim_modem, lock_topic, MQTT_QOS1, prv_MQTT_LockCallback);
         
         return SIM_ST_READY;
     }
@@ -273,6 +280,25 @@ static void prv_MQTT_CommandCallback(MQTT_Message_t *msg) {
     }
     else if (strstr((char*)msg->payload, "\"cmd\":\"force_report\"")) {
         System_Service_SetForceReport(true);
+    }
+}
+
+/**
+ * @brief Xử lý lệnh Khóa/Mở xe từ Topic riêng Son/<IMEI>/lock
+ */
+static void prv_MQTT_LockCallback(MQTT_Message_t *msg) {
+    if (msg == NULL || msg->payload == NULL) return;
+    
+    char *payload = (char*)msg->payload;
+    LOG_INFO("[SIM TASK] Received Lock Command: %s", payload);
+    
+    if (strstr(payload, "lock")) {
+        LOG_INFO("[SIM TASK] Requesting VEHICLE LOCK...");
+        System_Service_RequestLock(true);
+    }
+    else if (strstr(payload, "unlock")) {
+        LOG_INFO("[SIM TASK] Requesting VEHICLE UNLOCK...");
+        System_Service_RequestLock(false);
     }
 }
 

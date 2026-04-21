@@ -164,5 +164,26 @@ static void System_Manager_Entry(void const * argument) {
 }
 
 static void Handle_AppCommands(void) {
-    /* Handle CLI/APP commands if any */
+    SystemData_t data;
+    System_Service_GetSnapshot(&data);
+    
+    if (data.lock_request_pending) {
+        if (data.target_lock_state) {
+            LOG_WARN("[SYS_MGR] Executing VEHICLE LOCK command...");
+            SYSTEM_LOCK_VEHICLE();
+            System_Service_UpdateLockStatus(true);
+        } else {
+            LOG_WARN("[SYS_MGR] Executing VEHICLE UNLOCK command...");
+            SYSTEM_UNLOCK_VEHICLE();
+            System_Service_UpdateLockStatus(false);
+        }
+        
+        /* Gửi phản hồi lên server theo topic: Son/<IMEI>/lock/res */
+        MQTT_Service_QueuePublish("lock/res", "{\"status\":\"done\"}");
+        
+        /* Xóa cờ yêu cầu để tránh lặp lại */
+        System_Service_ClearLockRequest();
+        
+        LOG_INFO("[SYS_MGR] Lock command executed and response queued.");
+    }
 }
