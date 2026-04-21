@@ -232,6 +232,7 @@ static SIM_State_t SIM_Handle_ServicesInit(void) {
 
 static void prv_MQTT_CommandCallback(MQTT_Message_t *msg);
 static void prv_MQTT_LockCallback(MQTT_Message_t *msg);
+static void prv_MQTT_ConfigCallback(MQTT_Message_t *msg);
 
 static SIM_State_t SIM_Handle_MQTTConnect(void) {
     if (MQTT_Service_Connect(&sim_modem) == MQTT_OK) {
@@ -252,6 +253,12 @@ static SIM_State_t SIM_Handle_MQTTConnect(void) {
         snprintf(lock_topic, sizeof(lock_topic), "Son/%s/lock", g_sim_imei);
         LOG_INFO("[SIM TASK] Subscribing to: %s", lock_topic);
         MQTT_Service_Subscribe(&sim_modem, lock_topic, MQTT_QOS1, prv_MQTT_LockCallback);
+        
+        /* 4. Subscribe vào topic Config riêng của thiết bị: Son/<IMEI>/config */
+        char config_topic[64];
+        snprintf(config_topic, sizeof(config_topic), "Son/%s/config", g_sim_imei);
+        LOG_INFO("[SIM TASK] Subscribing to: %s", config_topic);
+        MQTT_Service_Subscribe(&sim_modem, config_topic, MQTT_QOS1, prv_MQTT_ConfigCallback);
         
         return SIM_ST_READY;
     }
@@ -302,8 +309,34 @@ static void prv_MQTT_LockCallback(MQTT_Message_t *msg) {
     }
 }
 
+/**
+ * @brief Xử lý lệnh Cấu hình từ Topic: Son/<IMEI>/config
+ */
+static void prv_MQTT_ConfigCallback(MQTT_Message_t *msg) {
+    if (msg == NULL || msg->payload == NULL) return;
+    
+    char *payload = (char*)msg->payload;
+    LOG_INFO("[SIM TASK] Received Config Update (Compressed JSON): %s", payload);
+    
+    if (System_Service_UpdateConfig_Compressed(payload)) {
+        LOG_INFO("[SIM TASK] Config updated successfully.");
+        MQTT_Service_QueuePublish("config/res", "{\"status\":\"done\"}");
+    } else {
+        LOG_ERROR("[SIM TASK] Config update failed (Verifcation failed).");
+        MQTT_Service_QueuePublish("config/res", "{\"status\":\"error\",\"msg\":\"flash_verify_fail\"}");
+    }
+}
+
 static SIM_State_t SIM_Handle_Ready(void) {
-    /* Trong trạng thái READY, Task chủ yếu đợi Mail để Publish hoặc phản hồi RI */
+    /* 1. Kiểm tra bản tin Wakeup (Ưu tiên gửi trước data) */
+    if (System_Service_CheckWakeup()) {
+        LOG_INFO("[SIM TASK] Detected WAKEUP pending. Sending notification...");
+        char wakeup_json[64];
+        snprintf(wakeup_json, sizeof(wakeup_json), "{\"msg\":\"wakeup\",\"imei\":\"%s\"}", g_sim_imei);
+        MQTT_Service_QueuePublish("status", wakeup_json);
+    }
+
+    /* 2. Trong trạng thái READY, Task chủ yếu đợi Mail để Publish hoặc phản hồi RI */
     osEvent evt = MQTT_Service_GetMail(100);
     if (evt.status == osEventMail) {
         g_sim_task_busy = true; /* Đánh dấu bận để ngăn Power Task đi ngủ vào lúc này */

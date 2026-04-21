@@ -9,6 +9,8 @@
 #include "cmsis_os.h"
 #include <stdio.h>
 #include "power_task.h"
+#include <string.h>
+#include "sms_service.h"
 
 /* ========================================================================================
  * SECTION: Private Variables
@@ -135,15 +137,41 @@ static void System_Manager_Entry(void const * argument) {
                 const char* alert_str[] = {"NONE", "THEFT", "CRASH", "LOW_BAT"};
                 const char* severity_str[] = {"NONE", "LIGHT", "MEDIUM", "SEVERE"};
                 
-                char alert_buf[128];
-                snprintf(alert_buf, sizeof(alert_buf), "{\"alert\":\"%s\",\"severity\":\"%s\"}", 
+                char alert_buf[160];
+                snprintf(alert_buf, sizeof(alert_buf), "{\"alert\":\"%s\",\"severity\":\"%s\",\"lat\":%.6f,\"lon\":%.6f}", 
                          alert_str[data.sensor.alert_type > 3 ? 0 : data.sensor.alert_type], 
-                         severity_str[data.sensor.alert_remain > 3 ? 0 : data.sensor.alert_remain]);
+                         severity_str[data.sensor.alert_remain > 3 ? 0 : data.sensor.alert_remain],
+                         data.gps.lat, data.gps.lon);
                 
                 /* Gửi vào hàng đợi MQTT */
                 MQTT_Service_QueuePublish("alarm", alert_buf);
                 LOG_WARN("[SYS_MGR] ALERT queued: %s (MQTT Connected: %s)", 
-                         alert_buf, (MQTT_Service_IsConnected(&sim_modem) == MQTT_OK) ? "YES" : "NO (Waiting)");
+                         alert_buf, (MQTT_Service_IsConnected(&sim_modem) == MQTT_OK) ? "YES" : "NO (Wait)");
+                
+                /* 4a. Nếu là cảnh báo TAI NẠN, gửi thêm SMS đến các số điện thoại trong Config */
+                if (data.sensor.alert_type == ALERT_CRASH) {
+                    #if ENABLE_CRASH_SMS
+                    SystemConfig_t cfg;
+                    System_Service_GetConfig(&cfg);
+                    char sms_buf[160];
+                    snprintf(sms_buf, sizeof(sms_buf), 
+                             "[TAI NAN] Xe tai: https://maps.google.com/?q=%.6f,%.6f", 
+                             data.gps.lat, data.gps.lon);
+                    
+                    if (strlen(cfg.sms_phone1) >= 10) {
+                        LOG_INFO("[SYS_MGR] Sending Crash SMS to Phone 1: %s", cfg.sms_phone1);
+                        SMS_Service_Send(&sim_modem, cfg.sms_phone1, sms_buf);
+                    }
+                    if (strlen(cfg.sms_phone2) >= 10) {
+                        LOG_INFO("[SYS_MGR] Sending Crash SMS to Phone 2: %s", cfg.sms_phone2);
+                        SMS_Service_Send(&sim_modem, cfg.sms_phone2, sms_buf);
+                    }
+                    if (strlen(cfg.sms_phone3) >= 10) {
+                        LOG_INFO("[SYS_MGR] Sending Crash SMS to Phone 3: %s", cfg.sms_phone3);
+                        SMS_Service_Send(&sim_modem, cfg.sms_phone3, sms_buf);
+                    }
+                    #endif
+                }
                 
                 /* Xóa Alert trong Service để tránh gửi lặp lại */
                 System_Service_ClearAlert();

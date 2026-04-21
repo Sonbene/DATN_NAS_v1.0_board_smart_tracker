@@ -60,26 +60,29 @@ void Power_Task_SetState(uint32_t task_bit, bool is_idle) {
 
 static void Power_Task_Entry(void const * argument) {
     uint32_t park_counter = 0;
+    bool sleep_notify_triggered = false;
     
     while (1) {
         SystemData_t data;
+        SystemConfig_t cfg;
         System_Service_GetSnapshot(&data);
+        System_Service_GetConfig(&cfg);
         
         if (data.mode == SYS_MODE_STATIONARY) {
             park_counter++;
             
-            /* Ở giây 30 chẵn, gửi thông điệp báo Sleep lên server */
-            if (park_counter == 30) {
+            /* Khi đạt đến sleep_delay, gửi thông điệp báo Sleep lên server (chỉ gửi 1 lần) */
+            if (park_counter >= cfg.sleep_delay_s && !sleep_notify_triggered) {
                 LOG_INFO("[POWER TASK] Sending sleep notification to server...");
                 MQTT_Service_QueuePublish("status", "{\"status\":\"sleeping\"}");
                 
-                /* Báo bận SIMTask ngay lập tức để chặn PowerTask sleep luôn trong next loop,
-                 * phải chờ SIMTask nhận mail, gửi xong, rồi SIMTask tự báo rảnh lại. */
+                /* Báo bận SIMTask ngay lập tức để chặn PowerTask sleep luôn trong iteration này */
                 Power_Task_SetState(POWER_BIT_SIM, false);
+                sleep_notify_triggered = true;
             }
             
-            /* SAU 30 GIÂY THÌ VÀO MODE WAIT TO SLEEP */
-            if (park_counter >= 30) {
+            /* SAU KHI ĐÃ ĐẾN GIÂY HẸN THÌ VÀO MODE WAIT TO SLEEP */
+            if (park_counter >= cfg.sleep_delay_s) {
                 
                 /* KIỂM TRA ĐIỀU KIỆN: CÁC TASK ĐỀU RẢNH */
                 EventBits_t uxBits = xEventGroupWaitBits(
@@ -204,10 +207,12 @@ static void Power_Task_Entry(void const * argument) {
                     /* Note: SIM task sẽ tự reconnect MQTT qua state machine (CHECK_COMM → MQTT_CONNECT).
                      * Force report được queue, sẽ gửi khi MQTT ready. */
                     System_Service_SetForceReport(true);
+                    System_Service_SetWakeup(true); // Gửi thêm message wakeup riêng
                     LOG_INFO("[POWER TASK] === WAKEUP COMPLETE ===");
                     
-                    /* Reset counter để tránh ngủ lại ngay lập tức */
+                    /* Reset counter và flag để chuẩn bị cho chu kỳ sau */
                     park_counter = 0;
+                    sleep_notify_triggered = false;
                 } else {
                     LOG_INFO("[POWER TASK] Cannot sleep - Tasks: SIM=%s, GPS=%s, MGR=%s",
                              (uxBits & POWER_BIT_SIM)     ? "IDLE" : "BUSY",
@@ -220,6 +225,7 @@ static void Power_Task_Entry(void const * argument) {
                 LOG_INFO("[POWER TASK] Motion detected, sleep counter reset (was %ds)", (int)park_counter);
             }
             park_counter = 0;
+            sleep_notify_triggered = false;
         }
         
         osDelay(1000);

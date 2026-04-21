@@ -2,6 +2,8 @@
 #include "log.h"
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
+#include "w25q32_task.h"
 
 /* ========================================================================================
  * SECTION: Private Variables
@@ -63,11 +65,16 @@ void System_Service_Init(void) {
     g_sys_data.force_report = false;
     g_sys_data.lock_request_pending = false;
     g_sys_data.target_lock_state = false;
+    g_sys_data.wakeup_pending = false;
     g_sys_data.sensor.is_locked = false;
     g_sys_data.sensor.imu_update_tick = osKernelSysTick(); // Khởi đầu mốc thời gian im lặng
     strncpy(g_sys_data.imei, "UNKNOWN", sizeof(g_sys_data.imei) - 1);
+
+    /* 4. Load cấu hình từ Flash (nếu có) */
+    System_Service_LoadConfig();
     
-    LOG_INFO("[SYS_SVC] Initialized and Configured (Safe Mode)");
+    LOG_INFO("[SYS_SVC] Initialized. Config: iv=%d, sd=%d, siv=%d", 
+             g_sys_config.active_interval_s, g_sys_config.sleep_delay_s, g_sys_config.stationary_interval_s);
 }
 
 void System_Service_SetIMEI(const char *imei) {
@@ -320,4 +327,104 @@ void System_Service_ClearLockRequest(void) {
     osMutexWait(g_sys_data.mutex, 100);
     g_sys_data.lock_request_pending = false;
     osMutexRelease(g_sys_data.mutex);
+}
+
+bool System_Service_CheckWakeup(void) {
+    if (g_sys_data.mutex == NULL) return false;
+    osMutexWait(g_sys_data.mutex, 100);
+    bool ret = g_sys_data.wakeup_pending;
+    g_sys_data.wakeup_pending = false; // Tự xóa sau khi check
+    osMutexRelease(g_sys_data.mutex);
+    return ret;
+}
+
+void System_Service_SetWakeup(bool pending) {
+    if (g_sys_data.mutex == NULL) return;
+    osMutexWait(g_sys_data.mutex, 100);
+    g_sys_data.wakeup_pending = pending;
+    osMutexRelease(g_sys_data.mutex);
+}
+
+/* ========================================================================================
+ * SECTION: Flash Config Persistence
+ * ======================================================================================== */
+
+void System_Service_SaveConfig(void) {
+    LOG_INFO("[SYS_SVC] Requesting Config SAVE to W25Q32_Task...");
+    if (W25Q32_Task_SaveConfig()) {
+        LOG_INFO("[SYS_SVC] SaveConfig completed successfully.");
+    } else {
+        LOG_ERROR("[SYS_SVC] SaveConfig FAILED or Timed out.");
+    }
+}
+
+void System_Service_LoadConfig(void) {
+    LOG_INFO("[SYS_SVC] Requesting Config LOAD from W25Q32_Task...");
+    if (W25Q32_Task_LoadConfig()) {
+        LOG_INFO("[SYS_SVC] LoadConfig completed successfully.");
+    } else {
+        LOG_WARN("[SYS_SVC] LoadConfig failed or no valid config found.");
+    }
+}
+
+static char* prv_ExtractJSONValue(const char* json, const char* key, char* out_buf, uint16_t out_len) {
+    char search_key[16];
+    snprintf(search_key, sizeof(search_key), "\"%s\":", key);
+    char* pos = strstr(json, search_key);
+    if (!pos) return NULL;
+    
+    pos += strlen(search_key);
+    
+    /* Bỏ qua khoảng trắng hoặc dấu ngoặc kép bắt đầu */
+    while (*pos == ' ' || *pos == '\"') pos++;
+    
+    char* end = pos;
+    while (*end != ',' && *end != '}' && *end != '\"' && *end != '\0') end++;
+    
+    uint16_t len = end - pos;
+    if (len >= out_len) len = out_len - 1;
+    
+    memcpy(out_buf, pos, len);
+    out_buf[len] = '\0';
+    return out_buf;
+}
+
+bool System_Service_UpdateConfig_Compressed(const char *json) {
+    if (json == NULL) return false;
+    
+    LOG_INFO("[SYS_SVC] Parsing compressed config JSON...");
+    
+    osMutexWait(g_sys_data.mutex, osWaitForever);
+    char val_buf[32];
+    
+    /* iv: active_interval_s */
+    if (prv_ExtractJSONValue(json, "iv", val_buf, sizeof(val_buf))) {
+        g_sys_config.active_interval_s = atoi(val_buf);
+    }
+    
+    /* sd: sleep_delay_s */
+    if (prv_ExtractJSONValue(json, "sd", val_buf, sizeof(val_buf))) {
+        g_sys_config.sleep_delay_s = atoi(val_buf);
+    }
+    
+    /* siv: stationary_interval_s */
+    if (prv_ExtractJSONValue(json, "siv", val_buf, sizeof(val_buf))) {
+        g_sys_config.stationary_interval_s = atoi(val_buf);
+    }
+    
+    /* p1, p2, p3: sms_phoneX */
+    if (prv_ExtractJSONValue(json, "p1", val_buf, sizeof(val_buf))) {
+        strncpy(g_sys_config.sms_phone1, val_buf, sizeof(g_sys_config.sms_phone1)-1);
+    }
+    if (prv_ExtractJSONValue(json, "p2", val_buf, sizeof(val_buf))) {
+        strncpy(g_sys_config.sms_phone2, val_buf, sizeof(g_sys_config.sms_phone2)-1);
+    }
+    if (prv_ExtractJSONValue(json, "p3", val_buf, sizeof(val_buf))) {
+        strncpy(g_sys_config.sms_phone3, val_buf, sizeof(g_sys_config.sms_phone3)-1);
+    }
+    
+    osMutexRelease(g_sys_data.mutex);
+    
+    /* Gửi yêu cầu lưu vào Flash thông qua Task quản lý */
+    return W25Q32_Task_SaveConfig();
 }

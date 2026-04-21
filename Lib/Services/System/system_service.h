@@ -12,6 +12,14 @@
 #define DEFAULT_ACTIVE_INTERVAL_S       10      /**< 10 giây khi di chuyển */
 #define DEFAULT_STATIONARY_INTERVAL_S   30     /**< 5 phút khi đứng yên */
 #define MAX_REPORT_INTERVAL_S           3600    /**< Tối đa 1 tiếng */
+#define DEFAULT_SLEEP_DELAY_S           30      /**< 30 giây chờ trước khi ngủ */
+
+/* Cấu hình lưu trữ Config vào Flash */
+#define CONFIG_FLASH_SECTOR             1023    /**< Sector cuối cùng của W25Q32 (4MB) */
+#define CONFIG_FLASH_MAGIC              0xC04F  /**< "CONF" Magic word */
+
+/* Tính năng báo động tai nạn */
+#define ENABLE_CRASH_SMS                0       /**< 1: Bật, 0: Tắt gửi SMS khi có tai nạn */
 
 /* Abstraction cho chân khóa xe (Relay) */
 #define VEHICLE_LOCK_PORT               GPIOA
@@ -79,6 +87,11 @@ typedef struct {
     bool     is_armed;              /**< Trạng thái chống trộm (Bật/Tắt) */
     bool     gps_enable;            /**< Cho phép/Cấm GPS */
     bool     alert_enable;          /**< Cho phép/Cấm gửi cảnh báo */
+    uint16_t sleep_delay_s;         /**< Thời gian chờ đứng yên trước khi ngủ */
+    char     sms_phone1[16];        /**< Số điện thoại nhận SMS 1 */
+    char     sms_phone2[16];        /**< Số điện thoại nhận SMS 2 */
+    char     sms_phone3[16];        /**< Số điện thoại nhận SMS 3 */
+    uint16_t magic;                 /**< Luôn là CONFIG_FLASH_MAGIC để kiểm tra hợp lệ */
 } SystemConfig_t;
 
 /**
@@ -151,6 +164,9 @@ typedef struct {
     /* Command từ Server (Lock/Unlock) */
     bool            lock_request_pending; /**< Cờ có yêu cầu đổi trạng thái khóa */
     bool            target_lock_state;    /**< Trạng thái mong muốn (true = Lock) */
+    
+    /* Trạng thái đặc biệt */
+    bool            wakeup_pending;       /**< Cờ báo vừa thức dậy từ Sleep */
 } SystemData_t;
 
 /* --- API Prototype cho System Service --- */
@@ -179,6 +195,14 @@ void System_Service_UpdateConfig(SystemConfig_t *new_cfg);
 bool System_Service_CheckForceReport(void);
 void System_Service_SetForceReport(bool force);
 void System_Service_VisualNotify(uint8_t count);
+
+bool System_Service_CheckWakeup(void);
+void System_Service_SetWakeup(bool pending);
+
+/* Flash Persistence & Config Update API */
+void System_Service_SaveConfig(void);
+void System_Service_LoadConfig(void);
+bool System_Service_UpdateConfig_Compressed(const char *json);
 
 /* Lock Control API */
 void System_Service_RequestLock(bool lock);

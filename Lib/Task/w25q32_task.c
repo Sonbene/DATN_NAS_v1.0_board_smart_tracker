@@ -13,9 +13,9 @@ extern SPI_HandleTypeDef hspi1;
 
 #define TRACKER_LOG_MAGIC 0x534F4E42  /* "SONB" */
 
-/* Mail Queue nhận yêu cầu ghi Log */
-osMailQDef(log_q, 8, TrackerLog_t);
-static osMailQId log_q_id = NULL;
+/* Mail Queue nhận yêu cầu từ các Task khác */
+osMailQDef(flash_q, 10, W25Q_Msg_t);
+static osMailQId flash_q_id = NULL;
 
 static Storage_Config_t tracker_storage_cfg = {
     .start_addr = 0x1000,       /* Start from Sector 1 */
@@ -46,7 +46,7 @@ void W25Q32_Task_Init(void)
     BSP_SPI_Handle_Init(&flash_spi_handle, &spi1_bus);
 
     /* 3. Tạo Mail Queue */
-    log_q_id = osMailCreate(osMailQ(log_q), NULL);
+    flash_q_id = osMailCreate(osMailQ(flash_q), NULL);
 
     /* 4. Tạo Task */
     osThreadDef(w25q32Task, StartW25Q32Task, osPriorityNormal, 0, 512);
@@ -54,13 +54,51 @@ void W25Q32_Task_Init(void)
 }
 
 void W25Q32_Task_Log(TrackerLog_t *log) {
-    if (log_q_id == NULL || log == NULL) return;
+    if (flash_q_id == NULL || log == NULL) return;
     
-    TrackerLog_t *mail = (TrackerLog_t *)osMailAlloc(log_q_id, 0);
-    if (mail != NULL) {
-        memcpy(mail, log, sizeof(TrackerLog_t));
-        osMailPut(log_q_id, mail);
+    W25Q_Msg_t *msg = (W25Q_Msg_t *)osMailAlloc(flash_q_id, 0);
+    if (msg != NULL) {
+        msg->cmd = W25Q_CMD_LOG;
+        memcpy(&(msg->log), log, sizeof(TrackerLog_t));
+        msg->sem = NULL; // Không cần đợi
+        osMailPut(flash_q_id, msg);
     }
+}
+
+static bool prv_Flash_SyncRequest(W25Q_Cmd_t cmd) {
+    if (flash_q_id == NULL) return false;
+
+    osSemaphoreDef(syncSem);
+    osSemaphoreId sem = osSemaphoreCreate(osSemaphore(syncSem), 1);
+    osSemaphoreWait(sem, 0); // Đưa về 0
+
+    W25Q_Msg_t *msg = (W25Q_Msg_t *)osMailAlloc(flash_q_id, 100);
+    if (msg == NULL) {
+        osSemaphoreDelete(sem);
+        return false;
+    }
+
+    msg->cmd = cmd;
+    msg->sem = sem;
+    
+    if (osMailPut(flash_q_id, msg) != osOK) {
+        osMailFree(flash_q_id, msg);
+        osSemaphoreDelete(sem);
+        return false;
+    }
+
+    /* Chờ task Flash xử lý xong (Max 3s cho Erase-Write) */
+    bool success = (osSemaphoreWait(sem, 3000) == osOK);
+    osSemaphoreDelete(sem);
+    return success;
+}
+
+bool W25Q32_Task_SaveConfig(void) {
+    return prv_Flash_SyncRequest(W25Q_CMD_SAVE_CONFIG);
+}
+
+bool W25Q32_Task_LoadConfig(void) {
+    return prv_Flash_SyncRequest(W25Q_CMD_LOAD_CONFIG);
 }
 
 void StartW25Q32Task(void const * argument)
@@ -82,21 +120,52 @@ void StartW25Q32Task(void const * argument)
     LOG_INFO("[FLASH] Storage ready. Current logs: %d", sensor_ctx.current_index);
 
     for(;;) {
-        /* Chờ yêu cầu ghi log từ Queue */
-        osEvent evt = osMailGet(log_q_id, osWaitForever);
+        /* Chờ yêu cầu từ Queue */
+        osEvent evt = osMailGet(flash_q_id, osWaitForever);
         
         if (evt.status == osEventMail) {
-            TrackerLog_t *log_data = (TrackerLog_t *)evt.value.p;
+            W25Q_Msg_t *msg = (W25Q_Msg_t *)evt.value.p;
             
-            Storage_Status_t status = Storage_Append(&flash_handle, &tracker_storage_cfg, &sensor_ctx, log_data);
-            
-            if (status == STORAGE_OK) {
-                LOG_INFO("[FLASH] Log #%d saved speed=%.1f", sensor_ctx.current_index - 1, log_data->speed);
-            } else if (status == STORAGE_FULL) {
-                LOG_WARN("[FLASH] Storage FULL!");
+            switch (msg->cmd) {
+                case W25Q_CMD_LOG: {
+                    Storage_Append(&flash_handle, &tracker_storage_cfg, &sensor_ctx, &(msg->log));
+                    LOG_INFO("[FLASH] Log #%d saved", sensor_ctx.current_index - 1);
+                    break;
+                }
+                
+                case W25Q_CMD_SAVE_CONFIG: {
+                    SystemConfig_t cfg;
+                    System_Service_GetConfig(&cfg);
+                    cfg.magic = CONFIG_FLASH_MAGIC;
+                    
+                    LOG_INFO("[FLASH] Sector %d Erasing...", CONFIG_FLASH_SECTOR);
+                    W25Q_EraseSector(&flash_handle, CONFIG_FLASH_SECTOR * W25Q_SECTOR_SIZE);
+                    LOG_INFO("[FLASH] Sector %d Writing...", CONFIG_FLASH_SECTOR);
+                    W25Q_Write(&flash_handle, CONFIG_FLASH_SECTOR * W25Q_SECTOR_SIZE, (uint8_t*)&cfg, sizeof(SystemConfig_t));
+                    LOG_INFO("[FLASH] Config saved.");
+                    break;
+                }
+                
+                case W25Q_CMD_LOAD_CONFIG: {
+                    SystemConfig_t temp_cfg;
+                    W25Q_Read(&flash_handle, CONFIG_FLASH_SECTOR * W25Q_SECTOR_SIZE, (uint8_t*)&temp_cfg, sizeof(SystemConfig_t));
+                    
+                    if (temp_cfg.magic == CONFIG_FLASH_MAGIC) {
+                        System_Service_UpdateConfig(&temp_cfg);
+                        LOG_INFO("[FLASH] Config loaded from Sector %d.", CONFIG_FLASH_SECTOR);
+                    } else {
+                        LOG_WARN("[FLASH] No valid config in Sector %d (Magic: 0x%04X)", CONFIG_FLASH_SECTOR, temp_cfg.magic);
+                    }
+                    break;
+                }
             }
             
-            osMailFree(log_q_id, log_data);
+            /* Nếu là lệnh đồng bộ, báo cho caller biết đã xong */
+            if (msg->sem != NULL) {
+                osSemaphoreRelease(msg->sem);
+            }
+            
+            osMailFree(flash_q_id, msg);
         }
     }
 }
