@@ -7,6 +7,7 @@
 #include "atgm336h_task.h"
 #include "sim_task.h"
 #include "mqtt_service.h"
+#include "imu_service.h"
 
 /* ========================================================================================
  * SECTION: Private Variables
@@ -129,6 +130,9 @@ static void Power_Task_Entry(void const * argument) {
                      * SysTick interrupt sẽ đánh thức CPU ngay lập tức! */
                     SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
                     
+                    /* Dọn sạch trạng thái cảm biến IMU (để INT pin về HIGH) */
+                    IMU_Service_ClearStatus();
+                    
                     /* Tắt tất cả interrupt để tránh race condition giữa việc
                      * clear pending bits và lệnh WFI. WFI vẫn wake-on-interrupt 
                      * dù PRIMASK = 1, nhưng handler sẽ không chạy cho tới __enable_irq(). */
@@ -156,6 +160,9 @@ static void Power_Task_Entry(void const * argument) {
                     /* CPU dừng tại đây. Chỉ thức khi có ngắt EXTI thực sự trên PA0/PA5/PB9 */
                     HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
                     
+                    /* Ghi lại nguồn đánh thức TRƯỚC khi enable IRQ (để cờ PR chưa bị xóa) */
+                    uint32_t wakeup_pr1 = EXTI->PR1;
+                    
                     /* TẮT LED ngay khi thức dậy: LED TẮT = ĐÃ THỨC */
                     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
                     
@@ -179,6 +186,12 @@ static void Power_Task_Entry(void const * argument) {
                     
                     LOG_INFO("[POWER TASK] === WAKEUP SEQUENCE START ===");
                     LOG_INFO("[POWER TASK] Clock & peripherals restored.");
+                    
+                    /* In thông tin nguồn đánh thức */
+                    if (wakeup_pr1 & GPIO_PIN_0) LOG_INFO("[POWER TASK] Wakeup Source: IMU INT1 (PA0)");
+                    if (wakeup_pr1 & GPIO_PIN_5) LOG_INFO("[POWER TASK] Wakeup Source: SIM RI (PA5)");
+                    if (wakeup_pr1 & GPIO_PIN_9) LOG_INFO("[POWER TASK] Wakeup Source: IMU INT2 (PB9)");
+                    if (wakeup_pr1 == 0) LOG_INFO("[POWER TASK] Wakeup Source: Unknown / Other");
                     
                     /* ----- BƯỚC 6: ĐÁNH THỨC MODULE NGOẠI VI ----- */
                     SIM_Task_SetSleep(false);

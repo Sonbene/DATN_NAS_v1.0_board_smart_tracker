@@ -130,6 +130,7 @@ static void System_Manager_Entry(void const * argument) {
 
         /* 4. Xử lý cảnh báo tức thời */
         if (data.sensor.alert_type != ALERT_NONE) {
+            /* Chỉ báo cáo nếu cảnh báo còn mới (trong vòng 30s) */
             if ((current_tick - data.sensor.alert_tick) < 30000) {
                 const char* alert_str[] = {"NONE", "THEFT", "CRASH", "LOW_BAT"};
                 const char* severity_str[] = {"NONE", "LIGHT", "MEDIUM", "SEVERE"};
@@ -138,11 +139,17 @@ static void System_Manager_Entry(void const * argument) {
                 snprintf(alert_buf, sizeof(alert_buf), "{\"alert\":\"%s\",\"severity\":\"%s\"}", 
                          alert_str[data.sensor.alert_type > 3 ? 0 : data.sensor.alert_type], 
                          severity_str[data.sensor.alert_remain > 3 ? 0 : data.sensor.alert_remain]);
-                         
-                MQTT_Service_QueuePublish("alarm", alert_buf);
-                LOG_INFO("[SYS_MGR] ALARM report queued: %s", alert_buf);
                 
-                /* Quan trọng: Xóa Alert sau khi đã gửi để tránh gửi lặp lại */
+                /* Gửi vào hàng đợi MQTT */
+                MQTT_Service_QueuePublish("alarm", alert_buf);
+                LOG_WARN("[SYS_MGR] ALERT queued: %s (MQTT Connected: %s)", 
+                         alert_buf, (MQTT_Service_IsConnected(&sim_modem) == MQTT_OK) ? "YES" : "NO (Waiting)");
+                
+                /* Xóa Alert trong Service để tránh gửi lặp lại */
+                System_Service_ClearAlert();
+            } else {
+                /* Cảnh báo quá cũ -> tự động xóa */
+                LOG_INFO("[SYS_MGR] Old alert (%d) cleared without reporting", data.sensor.alert_type);
                 System_Service_ClearAlert();
             }
         }
