@@ -20,6 +20,7 @@ extern UART_HandleTypeDef huart1; /* GPS */
 extern UART_HandleTypeDef huart2; /* SIM */
 extern UART_HandleTypeDef huart3; /* LOG */
 extern ADC_HandleTypeDef hadc1;   /* BATTERY */
+extern RTC_HandleTypeDef hrtc;    /* RTC for periodic wakeup */
 
 /* ========================================================================================
  * SECTION: Private Functions
@@ -118,6 +119,31 @@ static void Power_Task_Entry(void const * argument) {
                     /* Chờ module tắt nguồn hoàn toàn */
                     osDelay(1000);
                     
+                    /* ----- BƯỚC 1: CẤU HÌNH RTC WAKEUP TIMER (NẾU CÓ) ----- */
+                    if (cfg.stationary_interval_s > 0) {
+                        /* Tắt timer cũ nếu đang chạy */
+                        HAL_RTCEx_DeactivateWakeUpTimer(&hrtc);
+                        
+                        /* Xóa sạch các cờ ngắt RTC cũ */
+                        __HAL_RTC_WAKEUPTIMER_CLEAR_FLAG(&hrtc, RTC_FLAG_WUTF);
+                        __HAL_RTC_WAKEUPTIMER_EXTI_CLEAR_FLAG();
+                        
+                        /* Thiết lập chu kỳ thức dậy (1Hz clock, counter = seconds - 1) 
+                         * Sử dụng 16BITS để tránh bị cộng thêm 65536 giây (như bản 17BITS) */
+                        if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, cfg.stationary_interval_s - 1, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) != HAL_OK) {
+                            LOG_ERROR("[POWER TASK] Failed to set RTC Wakeup Timer!");
+                        } else {
+                            /* Ép kích hoạt ngắt EXTI Line 20 (RTC Wakeup) để đảm bảo wakeup từ STOP2 */
+                            __HAL_RTC_WAKEUPTIMER_EXTI_ENABLE_IT();
+                            __HAL_RTC_WAKEUPTIMER_EXTI_ENABLE_RISING_EDGE();
+
+                            LOG_INFO("[POWER TASK] RTC Wakeup set for %d seconds. (Mode: 16-bit)", cfg.stationary_interval_s);
+                            
+                            /* QUAN TRỌNG: Đợi đủ lâu để RTC kịp đồng bộ giá trị counter mới */
+                            osDelay(50); 
+                        }
+                    }
+
                     LOG_INFO("[POWER TASK] Disabling MCU peripherals...");
                     osDelay(100); /* Cho Log cuối cùng kịp in */
                     
@@ -151,20 +177,38 @@ static void Power_Task_Entry(void const * argument) {
                     NVIC_ClearPendingIRQ(USART2_IRQn);
                     NVIC_ClearPendingIRQ(USART3_IRQn);
                     NVIC_ClearPendingIRQ(DMA1_Channel1_IRQn);  /* ADC DMA */
+                    NVIC_ClearPendingIRQ(DMA1_Channel2_IRQn);  /* SPI1 TX */
+                    NVIC_ClearPendingIRQ(DMA1_Channel3_IRQn);  /* SPI1 RX */
                     NVIC_ClearPendingIRQ(DMA1_Channel5_IRQn);  /* USART1 RX DMA */
                     NVIC_ClearPendingIRQ(DMA1_Channel6_IRQn);  /* USART2 RX DMA */
                     NVIC_ClearPendingIRQ(DMA1_Channel7_IRQn);  /* USART2 TX DMA */
+                    NVIC_ClearPendingIRQ(DMA2_Channel3_IRQn);  /* USART3 RX DMA */
+                    NVIC_ClearPendingIRQ(DMA2_Channel4_IRQn);  /* USART3 TX DMA */
                     NVIC_ClearPendingIRQ(ADC1_IRQn);
+                    NVIC_ClearPendingIRQ(RTC_WKUP_IRQn);       /* RTC Wakeup */
+                    NVIC_ClearPendingIRQ(SysTick_IRQn);        /* Đề phòng SysTick còn sót */
                     
-                    /* ----- BƯỚC 3: VÀO STOP MODE 2 (NGỦ SÂU) ----- */
-                    /* BẬT LED (PC13 active-low) để báo hiệu: LED SÁNG = ĐANG NGỦ */
-                    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-                    
-                    /* CPU dừng tại đây. Chỉ thức khi có ngắt EXTI thực sự trên PA0/PA5/PB9 */
+
+                    /* XÓA TẤT CẢ cờ ngắt EXTI đang tồn đọng (bao gồm cả Line 20 cho RTC) */
+                    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_0);  /* IMU INT1 */
+                    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_5);  /* SIM RI   */
+                    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);  /* IMU INT2 */
+                    __HAL_RTC_WAKEUPTIMER_EXTI_CLEAR_FLAG();
+                    __HAL_RTC_WAKEUPTIMER_CLEAR_FLAG(&hrtc, RTC_FLAG_WUTF);
+
+                    /* Đảm bảo các lệnh trước đó đã hoàn tất */
+                    __DSB();
+                    __ISB();
+
+                    /* CPU dừng tại đây. Thức khi có ngắt EXTI: PA0 (IMU), PA5 (SIM), PB9 (IMU), hoặc Line 20 (RTC) */
                     HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
                     
-                    /* Ghi lại nguồn đánh thức TRƯỚC khi enable IRQ (để cờ PR chưa bị xóa) */
+                    /* === HỆ THỐNG THỨC DẬY TẠI ĐÂY === */
+                    
+                    /* Ghi lại nguồn đánh thức NGAY LẬP TỨC (TRƯỚC KHI BẬT LẠI INTERRUPT) 
+                     * Để tránh việc HAL ISR tự động clear các cờ này khi interrupts enabled. */
                     uint32_t wakeup_pr1 = EXTI->PR1;
+                    bool rtc_wakeup = __HAL_RTC_WAKEUPTIMER_EXTI_GET_FLAG();
                     
                     /* TẮT LED ngay khi thức dậy: LED TẮT = ĐÃ THỨC */
                     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
@@ -194,7 +238,18 @@ static void Power_Task_Entry(void const * argument) {
                     if (wakeup_pr1 & GPIO_PIN_0) LOG_INFO("[POWER TASK] Wakeup Source: IMU INT1 (PA0)");
                     if (wakeup_pr1 & GPIO_PIN_5) LOG_INFO("[POWER TASK] Wakeup Source: SIM RI (PA5)");
                     if (wakeup_pr1 & GPIO_PIN_9) LOG_INFO("[POWER TASK] Wakeup Source: IMU INT2 (PB9)");
-                    if (wakeup_pr1 == 0) LOG_INFO("[POWER TASK] Wakeup Source: Unknown / Other");
+                    
+                    /* Check RTC Wakeup (EXTI Line 20) */
+                    if (rtc_wakeup) {
+                        LOG_INFO("[POWER TASK] Wakeup Source: RTC Periodic Timer (Line 20)");
+                        
+                        /* Xử lý cờ ngắt RTC */
+                        HAL_RTCEx_DeactivateWakeUpTimer(&hrtc);
+                        __HAL_RTC_WAKEUPTIMER_EXTI_CLEAR_FLAG();
+                        __HAL_RTC_WAKEUPTIMER_CLEAR_FLAG(&hrtc, RTC_FLAG_WUTF);
+                    }
+                    
+                    if (wakeup_pr1 == 0 && !rtc_wakeup) LOG_INFO("[POWER TASK] Wakeup Source: Unknown / Other");
                     
                     /* ----- BƯỚC 6: ĐÁNH THỨC MODULE NGOẠI VI ----- */
                     SIM_Task_SetSleep(false);

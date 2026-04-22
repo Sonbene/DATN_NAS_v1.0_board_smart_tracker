@@ -235,7 +235,9 @@ static void prv_MQTT_LockCallback(MQTT_Message_t *msg);
 static void prv_MQTT_ConfigCallback(MQTT_Message_t *msg);
 
 static SIM_State_t SIM_Handle_MQTTConnect(void) {
+    static int retry_count = 0;
     if (MQTT_Service_Connect(&sim_modem) == MQTT_OK) {
+        retry_count = 0;
         /* 1. Báo cáo trạng thái Online kèm thông tin IMEI khi vừa kết nối */
         char online_json[128];
         snprintf(online_json, sizeof(online_json), 
@@ -262,8 +264,17 @@ static SIM_State_t SIM_Handle_MQTTConnect(void) {
         
         return SIM_ST_READY;
     }
-    LOG_ERROR("[SIM TASK] MQTT Connection Failed, retrying...");
-    osDelay(10000);
+    
+    retry_count++;
+    LOG_ERROR("[SIM TASK] MQTT Connection Failed (Retry %d/3)", retry_count);
+    
+    if (retry_count >= 3) {
+        LOG_WARN("[SIM TASK] Max retries reached. Going to READY state anyway to allow sleep.");
+        retry_count = 0;
+        return SIM_ST_READY; /* Ép về READY để g_sim_task_busy = false */
+    }
+    
+    osDelay(5000);
     return SIM_ST_MQTT_CONNECT;
 }
 

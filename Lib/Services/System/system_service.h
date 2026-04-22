@@ -9,7 +9,7 @@
 /* ========================================================================================
  * SECTION: System Default Configurations
  * ======================================================================================== */
-#define DEFAULT_ACTIVE_INTERVAL_S       10      /**< 10 giây khi di chuyển */
+#define DEFAULT_ACTIVE_INTERVAL_S       30      /**< 10 giây khi di chuyển */
 #define DEFAULT_STATIONARY_INTERVAL_S   30     /**< 5 phút khi đứng yên */
 #define MAX_REPORT_INTERVAL_S           3600    /**< Tối đa 1 tiếng */
 #define DEFAULT_SLEEP_DELAY_S           30      /**< 30 giây chờ trước khi ngủ */

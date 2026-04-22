@@ -277,11 +277,19 @@ bool ATGM336H_Task_GetLatestInfo(ATGM336H_Info_t *out)
 void ATGM336H_Task_Standby(bool enable) {
     if (enable) {
         LOG_INFO("[GPS] Entering Standby mode...");
+        
+        /* Set PC15 LOW to cut power/disable module */
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+
         /* Gửi lệnh Standby (Lệnh PCAS cho chip CASIC hoặc PMTK cho thông dụng) */
         char *cmd = "$PCAS04,1*1A\r\n";
         BSP_UART_Transmit(&gps_uart_bus, (uint8_t*)cmd, strlen(cmd), 100);
     } else {
         LOG_INFO("[GPS] Waking up from Standby...");
+
+        /* Set PC15 HIGH to power on/enable module */
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
+
         /* Gửi chuỗi bất kỳ để đánh thức */
         char *cmd = "\r\n";
         BSP_UART_Transmit(&gps_uart_bus, (uint8_t*)cmd, strlen(cmd), 100);
