@@ -169,3 +169,11 @@ void StartW25Q32Task(void const * argument)
         }
     }
 }
+
+void W25Q32_Task_Sleep(void) {
+    W25Q_PowerDown(&flash_handle);
+}
+
+void W25Q32_Task_Wakeup(void) {
+    W25Q_ReleasePowerDown(&flash_handle);
+}

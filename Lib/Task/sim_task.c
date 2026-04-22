@@ -456,8 +456,21 @@ void SIM_Task_SetSleep(bool enable) {
         
         /* Chờ module sập hẳn (thường là mất 1-2s sau khi trả lời NORMAL POWER DOWN) */
         osDelay(2000);
+        
+        /* BÍ QUYẾT TỐI ƯU SIÊU TIẾT KIỆM ĐIỆN (EUREKA!):
+         * 1. PWRKEY: BẮT BUỘC PHẢI GIỮ HIGH (3.3V). Chân này có trở kéo lên VBAT (4V).
+         *    Nếu kéo LOW, module sẽ bị kích bật nguồn trở lại và ăn ~2.8mA dòng Idle!
+         *    Giữ HIGH sẽ không bị rò vì 3.3V < 4V (Diode phân cực ngược).
+         * 2. DTR, RST: Mức logic nội bộ của SIM là 1.8V (VDD_EXT = 0V khi tắt).
+         *    Giữ HIGH (3.3V) sẽ đẩy thẳng điện vào lõi SIM gây rò ~3mA. 
+         *    Nên BẮT BUỘC PHẢI KÉO LOW (0V) để chống rò! */
+        HAL_GPIO_WritePin(sim_modem.pwr_port, sim_modem.pwr_pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(sim_modem.rst_port, sim_modem.rst_pin, GPIO_PIN_RESET); // Kéo LOW cắt rò
+        HAL_GPIO_WritePin(sim_modem.dtr_port, sim_modem.dtr_pin, GPIO_PIN_RESET); // Kéo LOW cắt rò
+        
     } else {
         LOG_INFO("[SIM TASK] Waking up: Triggering full power-on sequence...");
+
         
         /* Đánh dấu để State Machine quay lại trạng thái SIM_ST_POWER_ON */
         g_modem_needs_power_on = true;

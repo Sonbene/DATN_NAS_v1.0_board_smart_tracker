@@ -8,6 +8,7 @@
 #include "sim_task.h"
 #include "mqtt_service.h"
 #include "imu_service.h"
+#include "w25q32_task.h"
 
 /* ========================================================================================
  * SECTION: Private Variables
@@ -304,6 +305,10 @@ static void Power_DisablePeripherals(void) {
     /* 4. Tắt SIM UART — AT+CSCLK=1 đã gửi xong, DMA phải dừng
      *    để tránh URC "OK" cuối cùng trigger DMA interrupt -> CPU thức dậy */
     HAL_UART_DeInit(&huart2);
+    
+    /* 5. Đưa Flash vào chế độ Deep Power-Down (tiết kiệm ~15uA) 
+     *    Lưu ý: KHÔNG TẮT SPI bus vì chân MOSI/SCK thả nổi sẽ làm Flash và IMU rò dòng. */
+    W25Q32_Task_Sleep();
 }
 
 static void Power_EnablePeripherals(void) {
@@ -319,7 +324,9 @@ static void Power_EnablePeripherals(void) {
     /* 4. Khôi phục SIM UART + khởi động lại DMA Circular RX */
     HAL_UART_Init(&huart2);
     SIM_Task_RestoreUART();
-
+    
+    /* 5. Đánh thức Flash W25Q32 */
+    W25Q32_Task_Wakeup();
 }
 //sleep
 //ok

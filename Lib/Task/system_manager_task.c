@@ -42,6 +42,9 @@ void System_Manager_Task_Init(void) {
 static void System_Manager_Entry(void const * argument) {
     LOG_INFO("[SYS_MGR] Task Started");
     
+    /* Load cấu hình từ Flash sau khi OS và Flash Task đã sẵn sàng */
+    System_Service_LoadConfig();
+    
     uint32_t last_report_tick = 0; 
     bool first_report_done = false;
     uint32_t stationary_seconds = 0;

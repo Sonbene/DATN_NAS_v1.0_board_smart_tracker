@@ -61,6 +61,16 @@ typedef struct {
 W25Q_Status_t W25Q_Init(W25Q_Handle_t *handle, BSP_SPI_Handle_t *spi_handle, GPIO_TypeDef *cs_port, uint16_t cs_pin);
 
 /**
+ * @brief Enter Deep Power-Down mode (0xB9)
+ */
+W25Q_Status_t W25Q_PowerDown(W25Q_Handle_t *handle);
+
+/**
+ * @brief Release from Deep Power-Down mode (0xAB)
+ */
+W25Q_Status_t W25Q_ReleasePowerDown(W25Q_Handle_t *handle);
+
+/**
  * @brief Read Manufacturer and Device ID
  */
 uint32_t W25Q_ReadID(W25Q_Handle_t *handle);

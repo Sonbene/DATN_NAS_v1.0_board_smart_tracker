@@ -70,9 +70,6 @@ void System_Service_Init(void) {
     g_sys_data.sensor.imu_update_tick = osKernelSysTick(); // Khởi đầu mốc thời gian im lặng
     strncpy(g_sys_data.imei, "UNKNOWN", sizeof(g_sys_data.imei) - 1);
 
-    /* 4. Load cấu hình từ Flash (nếu có) */
-    System_Service_LoadConfig();
-    
     LOG_INFO("[SYS_SVC] Initialized. Config: iv=%d, sd=%d, siv=%d", 
              g_sys_config.active_interval_s, g_sys_config.sleep_delay_s, g_sys_config.stationary_interval_s);
 }

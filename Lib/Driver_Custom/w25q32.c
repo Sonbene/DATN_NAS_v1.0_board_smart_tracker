@@ -208,3 +208,36 @@ bool W25Q_IsBusy(W25Q_Handle_t *handle)
 
     return (rx[1] & W25Q_SR1_BUSY_MASK) != 0;
 }
+
+W25Q_Status_t W25Q_PowerDown(W25Q_Handle_t *handle)
+{
+    uint8_t cmd = W25Q_POWER_DOWN;
+
+    if (BSP_SPI_LockBus(handle->spi_bus, handle->timeout) != BSP_SPI_OK) return W25Q_BUSY;
+
+    W25Q_Select(handle);
+    BSP_SPI_Transmit(handle->spi_bus, &cmd, 1, handle->timeout);
+    W25Q_Deselect(handle);
+
+    BSP_SPI_UnlockBus(handle->spi_bus);
+    return W25Q_OK;
+}
+
+W25Q_Status_t W25Q_ReleasePowerDown(W25Q_Handle_t *handle)
+{
+    uint8_t cmd = W25Q_RELEASE_POWER_DOWN;
+
+    if (BSP_SPI_LockBus(handle->spi_bus, handle->timeout) != BSP_SPI_OK) return W25Q_BUSY;
+
+    W25Q_Select(handle);
+    BSP_SPI_Transmit(handle->spi_bus, &cmd, 1, handle->timeout);
+    W25Q_Deselect(handle);
+
+    BSP_SPI_UnlockBus(handle->spi_bus);
+    
+    /* Wait for chip to wake up (tRES1/tRES2, max 3us, we delay 1ms to be safe) */
+    osDelay(1); 
+    
+    return W25Q_OK;
+}
+

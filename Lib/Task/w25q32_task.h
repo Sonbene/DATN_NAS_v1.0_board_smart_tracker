@@ -35,4 +35,7 @@ bool W25Q32_Task_SaveConfig(void);
  */
 bool W25Q32_Task_LoadConfig(void);
 
+void W25Q32_Task_Sleep(void);
+void W25Q32_Task_Wakeup(void);
+
 #endif
