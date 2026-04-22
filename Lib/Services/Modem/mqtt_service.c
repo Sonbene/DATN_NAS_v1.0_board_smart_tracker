@@ -6,7 +6,15 @@
 
 /* Lưu trữ thông số cấu hình và callback */
 static MQTT_Config_t g_mqtt_config;
-static MQTT_DataCallback_t g_mqtt_cb = NULL;
+
+#define MAX_SUBSCRIPTIONS 5
+typedef struct {
+    char topic[64];
+    MQTT_DataCallback_t cb;
+} MQTT_Sub_t;
+
+static MQTT_Sub_t g_mqtt_subs[MAX_SUBSCRIPTIONS];
+static uint8_t g_mqtt_sub_count = 0;
 
 /* Mail Queue nội bộ: Tăng từ 4 lên 10 để tránh mất bản tin khi task bận */
 osMailQDef(mqtt_mail_pool, 6, MQTT_Mail_t);
@@ -141,11 +149,31 @@ MQTT_Status_t MQTT_Service_Publish(SIM_Handle_t *sim, const char *topic, const u
 }
 
 MQTT_Status_t MQTT_Service_Subscribe(SIM_Handle_t *sim, const char *topic, MQTT_QoS_t qos, MQTT_DataCallback_t cb) {
-    if (sim == NULL || topic == NULL) return MQTT_ERROR;
+    if (sim == NULL || topic == NULL || cb == NULL) return MQTT_ERROR;
     char cmd[128];
-    g_mqtt_cb = cb;
 
-    /* A7670 Sub logic: TOPIC -> SUB */
+    /* 1. Lưu vào bảng đăng ký nội bộ để dispatch khi nhận dữ liệu */
+    bool found = false;
+    for (int i = 0; i < g_mqtt_sub_count; i++) {
+        if (strcmp(g_mqtt_subs[i].topic, topic) == 0) {
+            g_mqtt_subs[i].cb = cb;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        if (g_mqtt_sub_count < MAX_SUBSCRIPTIONS) {
+            strncpy(g_mqtt_subs[g_mqtt_sub_count].topic, topic, sizeof(g_mqtt_subs[0].topic) - 1);
+            g_mqtt_subs[g_mqtt_sub_count].cb = cb;
+            g_mqtt_sub_count++;
+        } else {
+            LOG_ERROR("[MQTT] Max subscriptions reached (%d)", MAX_SUBSCRIPTIONS);
+            return MQTT_ERROR;
+        }
+    }
+
+    /* 2. Gửi lệnh Subscribe tới Modem */
     snprintf(cmd, sizeof(cmd), "AT+CMQTTSUBTOPIC=%d,%d,%d\r\n", g_mqtt_config.client_index, (int)strlen(topic), qos);
     if (SIM_SendATWithData(sim, cmd, (const uint8_t*)topic, strlen(topic), "OK", 5000, 5000) != SIM_OK) return MQTT_ERROR;
 
@@ -225,6 +253,15 @@ void MQTT_Service_HandleURC(SIM_Handle_t *sim, char *line) {
         if (strstr(line, "+CMQTTRXTOPIC:")) {
             /* Dòng tiếp theo sẽ là Topic */
         } else {
+            /* Loại bỏ ký tự \r\n rác từ Modem để so khớp chính xác */
+            char *p = line;
+            while (*p) {
+                if (*p == '\r' || *p == '\n') {
+                    *p = '\0';
+                    break;
+                }
+                p++;
+            }
             strncpy(g_rx_topic, line, sizeof(g_rx_topic)-1);
             g_urc_state = URC_WAIT_PAYLOAD;
         }
@@ -238,14 +275,26 @@ void MQTT_Service_HandleURC(SIM_Handle_t *sim, char *line) {
         } else if (strstr(line, "+CMQTTRXEND:")) {
             g_urc_state = URC_IDLE;
         } else {
-            /* Đây chính là Payload */
-            if (g_mqtt_cb) {
-                MQTT_Message_t msg;
-                strncpy(msg.topic, g_rx_topic, sizeof(msg.topic)-1);
-                msg.payload = (uint8_t*)line;
-                msg.payload_len = g_rx_payload_len;
-                g_mqtt_cb(&msg);
+            /* Đây chính là Payload - Tìm callback phù hợp với topic */
+            bool handled = false;
+            for (int i = 0; i < g_mqtt_sub_count; i++) {
+                if (strcmp(g_rx_topic, g_mqtt_subs[i].topic) == 0) {
+                    if (g_mqtt_subs[i].cb) {
+                        MQTT_Message_t msg;
+                        strncpy(msg.topic, g_rx_topic, sizeof(msg.topic)-1);
+                        msg.payload = (uint8_t*)line;
+                        msg.payload_len = g_rx_payload_len;
+                        g_mqtt_subs[i].cb(&msg);
+                        handled = true;
+                    }
+                    break;
+                }
             }
+            
+            if (!handled) {
+                LOG_WARN("[MQTT] No callback registered for topic: %s", g_rx_topic);
+            }
+            
             g_urc_state = URC_IDLE;
         }
         return;

@@ -310,13 +310,14 @@ static void prv_MQTT_LockCallback(MQTT_Message_t *msg) {
     char *payload = (char*)msg->payload;
     LOG_INFO("[SIM TASK] Received Lock Command: %s", payload);
     
-    if (strstr(payload, "lock")) {
-        LOG_INFO("[SIM TASK] Requesting VEHICLE LOCK...");
-        System_Service_RequestLock(true);
-    }
-    else if (strstr(payload, "unlock")) {
+    /* Ưu tiên kiểm tra 'unlock' trước vì chuỗi 'unlock' chứa cả chữ 'lock' */
+    if (strstr(payload, "unlock")) {
         LOG_INFO("[SIM TASK] Requesting VEHICLE UNLOCK...");
         System_Service_RequestLock(false);
+    }
+    else if (strstr(payload, "lock")) {
+        LOG_INFO("[SIM TASK] Requesting VEHICLE LOCK...");
+        System_Service_RequestLock(true);
     }
 }
 
