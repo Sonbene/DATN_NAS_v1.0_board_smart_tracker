@@ -105,7 +105,14 @@ void StartW25Q32Task(void const * argument)
 {
     LOG_INFO("--- Storage Manager Test Started ---");
 
-    /* 1. Init Flash Driver */
+    /* 1. Đảm bảo Flash thức giấc nếu hệ thống bị Reset trong lúc Flash đang ngủ sâu */
+    flash_handle.spi_bus = &flash_spi_handle;
+    flash_handle.cs_port = GPIOB;
+    flash_handle.cs_pin = GPIO_PIN_6;
+    W25Q_ReleasePowerDown(&flash_handle);
+    osDelay(5);
+
+    /* 2. Init Flash Driver */
     if (W25Q_Init(&flash_handle, &flash_spi_handle, GPIOB, GPIO_PIN_6) != W25Q_OK) {
         LOG_ERROR("W25Q32 Init Failed!");
         for(;;) osDelay(1000);

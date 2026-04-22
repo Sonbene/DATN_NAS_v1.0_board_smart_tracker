@@ -464,9 +464,10 @@ void SIM_Task_SetSleep(bool enable) {
          * 2. DTR, RST: Mức logic nội bộ của SIM là 1.8V (VDD_EXT = 0V khi tắt).
          *    Giữ HIGH (3.3V) sẽ đẩy thẳng điện vào lõi SIM gây rò ~3mA. 
          *    Nên BẮT BUỘC PHẢI KÉO LOW (0V) để chống rò! */
-        HAL_GPIO_WritePin(sim_modem.pwr_port, sim_modem.pwr_pin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(sim_modem.rst_port, sim_modem.rst_pin, GPIO_PIN_RESET); // Kéo LOW cắt rò
-        HAL_GPIO_WritePin(sim_modem.dtr_port, sim_modem.dtr_pin, GPIO_PIN_RESET); // Kéo LOW cắt rò
+        /* Đưa các chân về mức IDLE (Tắt) theo mạch của bạn: */
+        //HAL_GPIO_WritePin(sim_modem.pwr_port, sim_modem.pwr_pin, GPIO_PIN_RESET); 
+        HAL_GPIO_WritePin(sim_modem.rst_port, sim_modem.rst_pin, GPIO_PIN_RESET); // Trả về LOW (Idle) theo mạch đảo của bạn
+        HAL_GPIO_WritePin(sim_modem.dtr_port, sim_modem.dtr_pin, GPIO_PIN_RESET); // Kéo LOW để SIM vào Sleep sâu
         
     } else {
         LOG_INFO("[SIM TASK] Waking up: Triggering full power-on sequence...");

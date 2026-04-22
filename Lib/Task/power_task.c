@@ -232,8 +232,12 @@ static void Power_Task_Entry(void const * argument) {
                     /* ----- BƯỚC 5: KHÔI PHỤC NGOẠI VI MCU ----- */
                     Power_EnablePeripherals();
                     
-                    LOG_INFO("[POWER TASK] === WAKEUP SEQUENCE START ===");
-                    LOG_INFO("[POWER TASK] Clock & peripherals restored.");
+                    /* ----- BƯỚC 6: NẠP LẠI CẤU HÌNH TỪ FLASH ----- */
+                    LOG_INFO("[POWER TASK] Reloading config from Flash...");
+                    W25Q32_Task_LoadConfig();
+                    
+                    LOG_INFO("[POWER TASK] === WAKEUP SEQUENCE COMPLETE ===");
+                    LOG_INFO("[POWER TASK] Clock, peripherals and configuration restored.");
                     
                     /* In thông tin nguồn đánh thức */
                     if (wakeup_pr1 & GPIO_PIN_0) LOG_INFO("[POWER TASK] Wakeup Source: IMU INT1 (PA0)");
