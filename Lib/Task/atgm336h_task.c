@@ -27,7 +27,7 @@
 
 /* ======================== External HAL Handle ======================== */
 
-extern UART_HandleTypeDef huart1;       /**< USART1 — nối ATGM336H (9600 baud, RX DMA) */
+extern UART_HandleTypeDef huart3;       /**< USART3 — nối ATGM336H (9600 baud, RX DMA) */
 
 /* ======================== Module State ======================== */
 
@@ -156,6 +156,7 @@ static void StartATGM336HTask(void const *argument)
         
         HAL_UARTEx_ReceiveToIdle_DMA(gps_uart_bus.huart, gps_rx_buf, GPS_RX_BUF_SIZE);
         __HAL_DMA_DISABLE_IT(gps_uart_bus.huart->hdmarx, DMA_IT_HT);
+        LOG_INFO("[GPS] Listening for NMEA data...");
 
 
         /* ---- 2. Lắng nghe trong cửa sổ ~1.1 giây ---- */
@@ -174,6 +175,11 @@ static void StartATGM336HTask(void const *argument)
                     LOG_WARN("[GPS] UART Error detected, restarting DMA...");
                     BSP_UART_AbortReceive(&gps_uart_bus);
                 } else if (rx_size > 0 && rx_size <= GPS_RX_BUF_SIZE) {
+                    LOG_INFO("[GPS] Read %d bytes from UART", (int)rx_size);
+                    /* In nội dung thô (NMEA sentences) */
+                    gps_rx_buf[rx_size < GPS_RX_BUF_SIZE ? rx_size : GPS_RX_BUF_SIZE - 1] = '\0';
+                    LOG_RAW("%s", (char*)gps_rx_buf);
+                    
                     ATGM336H_ParseBuffer(&gps_handle, gps_rx_buf, (uint16_t)rx_size);
                 }
 
@@ -187,6 +193,7 @@ static void StartATGM336HTask(void const *argument)
 
         /* ---- 3. Dừng nhận — giữ UART im lặng cho đến chu kỳ kế ---- */
         BSP_UART_AbortReceive(&gps_uart_bus);
+        LOG_INFO("[GPS] Parsing window closed.");
 
         /* ---- 4. Giải mã tọa độ và thời gian ---- */
         ATGM336H_Info_t info_utc, info;
@@ -248,7 +255,7 @@ void ATGM336H_Task_Init(void)
     LOG_INFO("[GPS] Initializing BSP UART + Parser...");
 
     /* 1. Khởi tạo BSP UART cho GPS (USART1) */
-    BSP_UART_Init(&gps_uart_bus, &huart1);
+    BSP_UART_Init(&gps_uart_bus, &huart3);
     BSP_UART_RegisterCallback(&gps_uart_bus, prv_GpsUartCallback);
 
     /* 2. Khởi tạo GPS NMEA Parser */

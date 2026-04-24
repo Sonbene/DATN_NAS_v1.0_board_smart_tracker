@@ -9,10 +9,10 @@
 #ifdef DEBUG_ENABLE
 
 /* External handles from main.c */
-extern UART_HandleTypeDef huart3;
+extern UART_HandleTypeDef huart1;
 
 /* Config */
-#define DEBUG_UART      &huart3
+#define DEBUG_UART      &huart1
 #define LOG_QUEUE_LEN   30
 
 BSP_UART_Handle_t debug_uart_handle;

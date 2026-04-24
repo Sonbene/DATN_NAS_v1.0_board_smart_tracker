@@ -17,9 +17,9 @@ static EventGroupHandle_t g_PowerEventGroup = NULL;
 
 extern void SystemClock_Config(void);
 
-extern UART_HandleTypeDef huart1; /* GPS */
+extern UART_HandleTypeDef huart1; /* LOG */
 extern UART_HandleTypeDef huart2; /* SIM */
-extern UART_HandleTypeDef huart3; /* LOG */
+extern UART_HandleTypeDef huart3; /* GPS */
 extern ADC_HandleTypeDef hadc1;   /* BATTERY */
 extern RTC_HandleTypeDef hrtc;    /* RTC for periodic wakeup */
 
@@ -298,13 +298,13 @@ static void Power_Task_Entry(void const * argument) {
 
 static void Power_DisablePeripherals(void) {
     /* 1. Tắt UART Debug (LOG) — sau dòng này LOG_INFO sẽ KHÔNG hoạt động */
-    HAL_UART_DeInit(&huart3);
+    HAL_UART_DeInit(&huart1);
     
     /* 2. Tắt ADC (đo pin) */
     HAL_ADC_DeInit(&hadc1);
     
     /* 3. Tắt GPS UART — tránh nhiễu từ chân RX đánh thức MCU */
-    HAL_UART_DeInit(&huart1);
+    HAL_UART_DeInit(&huart3);
     
     /* 4. Tắt SIM UART — AT+CSCLK=1 đã gửi xong, DMA phải dừng
      *    để tránh URC "OK" cuối cùng trigger DMA interrupt -> CPU thức dậy */
@@ -317,13 +317,13 @@ static void Power_DisablePeripherals(void) {
 
 static void Power_EnablePeripherals(void) {
     /* 1. Khôi phục UART Debug (LOG) — ưu tiên bật đầu tiên để debug */
-    HAL_UART_Init(&huart3);
+    HAL_UART_Init(&huart1);
     
     /* 2. Khôi phục ADC (bỏ qua lệnh Calibrate vì sụt áp đầu chu kỳ Wakeup sẽ làm sai lệch Offset) */
     HAL_ADC_Init(&hadc1);
     
     /* 3. Khôi phục GPS UART */
-    HAL_UART_Init(&huart1);
+    HAL_UART_Init(&huart3);
     
     /* 4. Khôi phục SIM UART + khởi động lại DMA Circular RX */
     HAL_UART_Init(&huart2);
