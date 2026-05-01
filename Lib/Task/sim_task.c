@@ -474,8 +474,8 @@ void SIM_Task_SetSleep(bool enable) {
         
         sim_modem.is_power_on = false;
         
-        /* Chờ module sập hẳn (thường là mất 1-2s sau khi trả lời NORMAL POWER DOWN) */
-        osDelay(2000);
+        /* Chờ module sập hẳn (A7670C cần ~3s để xả hết URC chia tay) */
+        osDelay(3000);
         
         /* BÍ QUYẾT TỐI ƯU SIÊU TIẾT KIỆM ĐIỆN (EUREKA!):
          * 1. PWRKEY: BẮT BUỘC PHẢI GIỮ HIGH (3.3V). Chân này có trở kéo lên VBAT (4V).

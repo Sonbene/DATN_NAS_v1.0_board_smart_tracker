@@ -168,11 +168,6 @@ static void Power_Task_Entry(void const * argument) {
                      * dù PRIMASK = 1, nhưng handler sẽ không chạy cho tới __enable_irq(). */
                     __disable_irq();
                     
-                    /* XÓA TẤT CẢ cờ ngắt EXTI đang tồn đọng */
-                    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_0);  /* IMU INT1 */
-                    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_5);  /* SIM RI   */
-                    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);  /* IMU INT2 */
-                    
                     /* Clear NVIC pending bits của các ngoại vi đã tắt */
                     NVIC_ClearPendingIRQ(USART1_IRQn);
                     NVIC_ClearPendingIRQ(USART2_IRQn);
@@ -190,6 +185,9 @@ static void Power_Task_Entry(void const * argument) {
                     NVIC_ClearPendingIRQ(SysTick_IRQn);        /* Đề phòng SysTick còn sót */
                     
 
+                    /* Tắt tạm thời ngắt RI (PA5) để tránh ngắt rác khi SIM tắt nguồn hoàn toàn */
+                    EXTI->IMR1 &= ~GPIO_PIN_5;
+
                     /* XÓA TẤT CẢ cờ ngắt EXTI đang tồn đọng (bao gồm cả Line 20 cho RTC) */
                     __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_0);  /* IMU INT1 */
                     __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_5);  /* SIM RI   */
@@ -201,7 +199,7 @@ static void Power_Task_Entry(void const * argument) {
                     __DSB();
                     __ISB();
 
-                    /* CPU dừng tại đây. Thức khi có ngắt EXTI: PA0 (IMU), PA5 (SIM), PB9 (IMU), hoặc Line 20 (RTC) */
+                    /* CPU dừng tại đây. Thức khi có ngắt EXTI: PA0 (IMU), PB9 (IMU), hoặc Line 20 (RTC) */
                     HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
                     
                     /* === HỆ THỐNG THỨC DẬY TẠI ĐÂY === */
@@ -218,6 +216,9 @@ static void Power_Task_Entry(void const * argument) {
                      *    HỆ THỐNG ĐÃ THỨC DẬY TẠI ĐÂY
                      * ============================================================ */
                     
+                    /* Khôi phục lại ngắt RI */
+                    EXTI->IMR1 |= GPIO_PIN_5;
+
                     /* Bật lại interrupt trước tiên */
                     __enable_irq();
                     

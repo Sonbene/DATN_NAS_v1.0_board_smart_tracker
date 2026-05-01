@@ -146,6 +146,7 @@ static void StartATGM336HTask(void const *argument)
     /* Kích C1815 để cấp nguồn cho GPS */
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
     
+
     /* Đóng băng CPU ngay lập tức để tránh lỗi nạp lệnh do sụt áp/nhiễu PLL (Inrush Current). */
     __DSB();
     __WFI();
