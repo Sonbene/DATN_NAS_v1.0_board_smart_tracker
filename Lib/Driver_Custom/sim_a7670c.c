@@ -38,15 +38,15 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
 
     LOG_INFO("[SIM] Module not responding, executing hardware power-on...");
 
-    /* 2. Hardware Reset Pulse */
-    HAL_GPIO_WritePin(handle->rst_port, handle->rst_pin, GPIO_PIN_SET);
-    osDelay(300); 
+    /* 2. Hardware Reset Pulse (Pulse LOW to reset) */
     HAL_GPIO_WritePin(handle->rst_port, handle->rst_pin, GPIO_PIN_RESET);
+    osDelay(500); 
+    HAL_GPIO_WritePin(handle->rst_port, handle->rst_pin, GPIO_PIN_SET);
     osDelay(1500);
 
     /* 3. PWRKEY sequence: Pulse LOW (Active) then return HIGH (Idle) */
     HAL_GPIO_WritePin(handle->pwr_port, handle->pwr_pin, GPIO_PIN_RESET);
-    osDelay(1500); 
+    osDelay(1000); /* 1000ms là mức an toàn chung cho cả A7670C và SIM7677S */
     HAL_GPIO_WritePin(handle->pwr_port, handle->pwr_pin, GPIO_PIN_SET);
     
     /* 4. Đợi phản hồi AT (Thử trong 15 giây với nhịp độ 1s như temp_mqtt) */
@@ -70,11 +70,13 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
         LOG_INFO("[SIM] Power On Success!");
         handle->is_power_on = true;
         
-        /* Cấu hình các tham số giúp hệ thống điện ổn định (Giống temp_mqtt) */
-        LOG_INFO("[SIM] Optimizing power and error reporting...");
+        /* Cấu hình các tham số giúp hệ thống điện ổn định và bắt sóng tốt */
+        LOG_INFO("[SIM] Optimizing power and network registration...");
         SIM_SendATCommand(handle, "ATE0\r\n", "OK", 1000);         // Tắt echo
         SIM_SendATCommand(handle, "AT+CMEE=2\r\n", "OK", 1000);   // Bật lỗi chi tiết
-        SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna chủ động để giảm dòng sụt áp
+        SIM_SendATCommand(handle, "AT+CFUN=1\r\n", "OK", 2000);   // Bật toàn bộ tính năng RF
+        SIM_SendATCommand(handle, "AT+CREG=1\r\n", "OK", 1000);   // Bật báo cáo đăng ký mạng
+        SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna (Có thể ERROR trên 7677S, kệ nó)
     } else {
         LOG_ERROR("[SIM] Failed to Power On!");
     }
@@ -286,7 +288,14 @@ SIM_Status_t SIM_DeleteSMS(SIM_Handle_t *handle, int index) {
 }
 
 SIM_Status_t SIM_PowerDown(SIM_Handle_t *handle) {
-    /* Lệnh tắt nguồn cho SIMCom A7670C là AT+CPOF (Trả về OK rồi sập nguồn) */
+    LOG_INFO("[SIM] Powering down... Trying SIM7677S command first.");
+    /* Thử lệnh tắt nguồn cho SIM7677S trước */
+    if (SIM_SendATCommand(handle, "AT+CPOWD=1\r\n", "NORMAL POWER DOWN", 2000) == SIM_OK) {
+        return SIM_OK;
+    }
+    
+    LOG_INFO("[SIM] Falling back to A7670C power down command.");
+    /* Nếu không được (đang dùng A7670C), thử lệnh AT+CPOF */
     return SIM_SendATCommand(handle, "AT+CPOF\r\n", "OK", 5000);
 }
 
@@ -475,9 +484,18 @@ void SIM_A7670C_Process(SIM_Handle_t *handle) {
         }
         
         /* --- 4. Nhóm LBS (Vị trí trạm phát sóng) --- */
-        else if (strstr(line, "+CLBS:") != NULL) {
+        else if (strstr(line, "+CLBS:")) {
+            int res = -1;
+            /* Parse mã kết quả trước: +CLBS: <res>... */
+            if (sscanf(line, "+CLBS: %d", &res) >= 1) {
+                if (res != 0) {
+                    LOG_WARN("[SIM] LBS Error: %d (1: Network error, 9: No signal/Timeout)", res);
+                    continue;
+                }
+            }
+
             float lbs_lat = 0, lbs_lon = 0;
-            int res = -1, prec = 0;
+            int prec = 0;
             int ty=0, tmon=0, td=0, th=0, tmin=0, ts=0;
 
             /* Thử parse định dạng đầy đủ (10 trường) */

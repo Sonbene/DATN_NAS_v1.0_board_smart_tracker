@@ -142,8 +142,7 @@ static SIM_State_t SIM_Handle_PowerOn(void) {
     LOG_INFO("[SIM] Executing MANDATORY Power-On/Reset Sequence...");
     
     g_sim_task_busy = true;
-    SIM_HardReset(&sim_modem);
-    osDelay(5000); // Tăng lên 5s cho module boot hoàn toàn
+    SIM_PowerOn(&sim_modem);
     
     if (SIM_TestAlive(&sim_modem) == SIM_OK) {
         LOG_INFO("[SIM TASK] Module responding!");
@@ -170,10 +169,24 @@ static SIM_State_t SIM_Handle_CheckComm(void) {
 
 static SIM_State_t SIM_Handle_WaitNet(void) {
     int stat = 0;
+    static int retry_count = 0;
     LOG_INFO("[SIM TASK] Waiting for network registration... (CREG?)");
+    
     if (SIM_GetNetworkReg(&sim_modem, &stat) == SIM_OK) {
         if (stat == 1 || stat == 5) {
+            retry_count = 0;
             return SIM_ST_SERVICES_INIT;
+        }
+        
+        /* Nếu báo 0 (Not searching), có thể RF đang tắt hoặc lỗi SIM */
+        if (stat == 0) {
+            retry_count++;
+            if (retry_count >= 5) {
+                LOG_WARN("[SIM TASK] ME not searching (CREG:0). Forcing RF On...");
+                SIM_SendATCommand(&sim_modem, "AT+CFUN=1\r\n", "OK", 2000);
+                SIM_SendATCommand(&sim_modem, "AT+CREG=1\r\n", "OK", 1000);
+                retry_count = 0;
+            }
         }
     }
     osDelay(3000);
@@ -366,6 +379,13 @@ static SIM_State_t SIM_Handle_Ready(void) {
                 MQTT_Service_FreeMail(mail);
                 g_sim_task_busy = false;
                 Power_Task_SetState(POWER_BIT_SIM, true);
+                return SIM_ST_MQTT_CONNECT;
+            } else {
+                /* Nếu vẫn báo connected mà publish fail (lỗi "no prompt"), có thể session bị kẹt.
+                   Force reconnect bằng cách trả về ST_MQTT_CONNECT */
+                LOG_WARN("[SIM TASK] MQTT Session might be stuck. Forcing reconnect...");
+                MQTT_Service_FreeMail(mail);
+                g_sim_task_busy = false;
                 return SIM_ST_MQTT_CONNECT;
             }
         } else {

@@ -140,6 +140,16 @@ static void StartATGM336HTask(void const *argument)
     LOG_INFO("[GPS] Task started. Cycle: %d ms, Listen: %d ms",
              GPS_CYCLE_PERIOD_MS, GPS_LISTEN_WINDOW_MS);
 
+    /* Chờ 2 giây để mạch nguồn 3.3V và kết nối USB ổn định (tránh sụt áp do inrush current) */
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    /* Kích C1815 để cấp nguồn cho GPS */
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
+    
+    /* Đóng băng CPU ngay lập tức để tránh lỗi nạp lệnh do sụt áp/nhiễu PLL (Inrush Current). */
+    __DSB();
+    __WFI();
+
     /* Chờ hệ thống ổn định sau khi cấp nguồn (GPS module cần thời gian boot) */
     vTaskDelay(pdMS_TO_TICKS(500));
 
@@ -296,6 +306,8 @@ void ATGM336H_Task_Standby(bool enable) {
 
         /* Set PC15 HIGH to power on/enable module */
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
+        __DSB();
+        __WFI(); // Đóng băng CPU để tránh lỗi sụt áp
 
         /* Gửi chuỗi bất kỳ để đánh thức */
         char *cmd = "\r\n";

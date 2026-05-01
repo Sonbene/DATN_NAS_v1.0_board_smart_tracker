@@ -17,7 +17,7 @@
  * ======================================================================================== */
 
 extern SIM_Handle_t sim_modem;
-#define STATIONARY_SLEEP_TIMEOUT_S      30      /**< Sau 30s đứng yên thì đi ngủ */
+#define STATIONARY_SLEEP_TIMEOUT_S      60      /**< Sau 60s đứng yên thì đi ngủ */
 
 /* ========================================================================================
  * SECTION: Private Functions
