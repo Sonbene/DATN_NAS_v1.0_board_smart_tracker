@@ -46,7 +46,7 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
 
     /* 3. PWRKEY sequence: Pulse LOW (Active) then return HIGH (Idle) */
     HAL_GPIO_WritePin(handle->pwr_port, handle->pwr_pin, GPIO_PIN_RESET);
-    osDelay(1500); 
+    osDelay(1000); /* SIM7677S: 500-1000ms pulse là đủ */
     HAL_GPIO_WritePin(handle->pwr_port, handle->pwr_pin, GPIO_PIN_SET);
     
     /* 4. Đợi phản hồi AT (Thử trong 15 giây với nhịp độ 1s như temp_mqtt) */
@@ -74,7 +74,7 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
         LOG_INFO("[SIM] Optimizing power and error reporting...");
         SIM_SendATCommand(handle, "ATE0\r\n", "OK", 1000);         // Tắt echo
         SIM_SendATCommand(handle, "AT+CMEE=2\r\n", "OK", 1000);   // Bật lỗi chi tiết
-        SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna chủ động để giảm dòng sụt áp
+        SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna (SIM7677S có thể không hỗ trợ, bỏ qua nếu ERROR)
     } else {
         LOG_ERROR("[SIM] Failed to Power On!");
     }
@@ -286,8 +286,8 @@ SIM_Status_t SIM_DeleteSMS(SIM_Handle_t *handle, int index) {
 }
 
 SIM_Status_t SIM_PowerDown(SIM_Handle_t *handle) {
-    /* Lệnh tắt nguồn cho SIMCom A7670C là AT+CPOF (Trả về OK rồi sập nguồn) */
-    return SIM_SendATCommand(handle, "AT+CPOF\r\n", "OK", 5000);
+    /* Lệnh tắt nguồn cho SIM7677S là AT+CPOWD=1 (Trả về NORMAL POWER DOWN rồi sập nguồn) */
+    return SIM_SendATCommand(handle, "AT+CPOWD=1\r\n", "NORMAL POWER DOWN", 5000);
 }
 
 SIM_Status_t SIM_SetSleepMode(SIM_Handle_t *handle, bool enable) {
