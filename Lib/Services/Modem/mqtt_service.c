@@ -79,7 +79,14 @@ MQTT_Status_t MQTT_Service_Connect(SIM_Handle_t *sim) {
 
     LOG_INFO("[MQTT] Connecting to %s:%d (SSL Mode)...", g_mqtt_config.host, g_mqtt_config.port);
     
-    /* 1. Reset client (Ignore errors here) */
+    /* 1. Đảm bảo Network IP stack đã mở (Cực kỳ quan trọng cho SIM7677S/A7670) */
+    if (SIM_SendATCommand(sim, "AT+CNACT?\r\n", "+CNACT: 1,1", 1000) != SIM_OK) {
+        LOG_INFO("[MQTT] Opening Network PDP Context (CNACT)...");
+        SIM_SendATCommand(sim, "AT+CNACT=1,1\r\n", "OK", 5000);
+        osDelay(1000); // Chờ IP stack ổn định
+    }
+
+    /* 2. Reset client (Ignore errors here) */
     SIM_SendATCommand(sim, "AT+CMQTTDISC=0,60\r\n", "OK", 1000);
     SIM_SendATCommand(sim, "AT+CMQTTREL=0\r\n", "OK", 1000);
     
@@ -100,8 +107,8 @@ MQTT_Status_t MQTT_Service_Connect(SIM_Handle_t *sim) {
              g_mqtt_config.client_index, g_mqtt_config.host, g_mqtt_config.port,
              g_mqtt_config.keepalive_sec, g_mqtt_config.username, g_mqtt_config.password);
 
-    if (SIM_SendATCommand(sim, cmd, "+CMQTTCONNECT: 0,0", 30000) != SIM_OK) {
-        LOG_ERROR("[MQTT] Connection failed");
+    if (SIM_SendATCommand(sim, cmd, "+CMQTTCONNECT: 0,0", 60000) != SIM_OK) {
+        LOG_ERROR("[MQTT] Connection failed (Timeout or Error)");
         return MQTT_ERROR;
     }
 

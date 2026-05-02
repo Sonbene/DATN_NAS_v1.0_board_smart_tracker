@@ -76,6 +76,7 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
         SIM_SendATCommand(handle, "AT+CMEE=2\r\n", "OK", 1000);   // Bật lỗi chi tiết
         SIM_SendATCommand(handle, "AT+CFUN=1\r\n", "OK", 2000);   // Bật toàn bộ tính năng RF
         SIM_SendATCommand(handle, "AT+CREG=1\r\n", "OK", 1000);   // Bật báo cáo đăng ký mạng
+        SIM_SendATCommand(handle, "AT+CGATT=1\r\n", "OK", 5000);  // Ép đăng ký GPRS/LTE Data
         SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna (Có thể ERROR trên 7677S, kệ nó)
     } else {
         LOG_ERROR("[SIM] Failed to Power On!");
@@ -557,6 +558,12 @@ SIM_Status_t SIM_GetLBSPosition(SIM_Handle_t *handle, float *lat, float *lon,
                                  uint8_t *y, uint8_t *mon, uint8_t *d,
                                  uint8_t *h, uint8_t *min, uint8_t *s) {
     if (handle == NULL) return SIM_ERROR;
+
+    /* LBS yêu cầu Network IP stack (CNACT) phải mở */
+    if (SIM_SendATCommand(handle, "AT+CNACT?\r\n", "+CNACT: 1,1", 1000) != SIM_OK) {
+        SIM_SendATCommand(handle, "AT+CNACT=1,1\r\n", "OK", 5000);
+        osDelay(500);
+    }
 
     /* AT+CLBS=1: Kích hoạt truy vấn vị trí. 
        Kết quả sẽ được trả về dạng URC (+CLBS: ...) và được xử lý tự động trong SIM_A7670C_Process.
