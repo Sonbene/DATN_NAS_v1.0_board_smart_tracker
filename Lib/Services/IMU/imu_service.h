@@ -23,12 +23,12 @@
 
 /** @defgroup CrashThresholds Crash Detection Thresholds */
 /** @{ */
-#define IMU_CRASH_ACCEL_TRIGGER_G       2.0f    /**< [TEST] Gia tốc trigger (2.0g) */
-#define IMU_CRASH_ACCEL_SEVERE_G        4.0f    /**< [TEST] Gia tốc severe (4.0g) */
-#define IMU_CRASH_ACCEL_MAX_G           6.0f    /**< [TEST] Gia tốc vỡ nát (6.0g) */
-#define IMU_CRASH_GYRO_CONFIRM_DPS      150.0f  /**< [TEST] Gyro xoay xác nhận crash (150dps) */
-#define IMU_CRASH_GYRO_MEDIUM_DPS       250.0f  /**< [TEST] Gyro xoay medium (250dps) */
-#define IMU_CRASH_GYRO_SEVERE_DPS       350.0f  /**< [TEST] Gyro xoay severe (350dps) */
+#define IMU_CRASH_ACCEL_TRIGGER_G       3.0f    /**< [TEST] Gia tốc trigger (3.0g) */
+#define IMU_CRASH_ACCEL_SEVERE_G        6.0f    /**< [TEST] Gia tốc severe (6.0g) */
+#define IMU_CRASH_ACCEL_MAX_G           8.0f    /**< [TEST] Gia tốc vỡ nát (8.0g) */
+#define IMU_CRASH_GYRO_CONFIRM_DPS      250.0f  /**< [TEST] Gyro xoay xác nhận crash (250dps) */
+#define IMU_CRASH_GYRO_MEDIUM_DPS       400.0f  /**< [TEST] Gyro xoay medium (400dps) */
+#define IMU_CRASH_GYRO_SEVERE_DPS       600.0f  /**< [TEST] Gyro xoay severe (600dps) */
 /** @} */
 
 /** @defgroup CrashWindow Crash Detection Window */
@@ -51,7 +51,7 @@
 
 /** @defgroup WOMConfig Wake-on-Motion Config */
 /** @{ */
-#define IMU_WOM_THRESHOLD_LSB           25     /**< 25 * 4mg = 100mg */
+#define IMU_WOM_THRESHOLD_LSB           40     /**< 50 * 4mg = 200mg */
 /** @} */
 
 /** @defgroup MotionStatus Motion Status Polling Config */

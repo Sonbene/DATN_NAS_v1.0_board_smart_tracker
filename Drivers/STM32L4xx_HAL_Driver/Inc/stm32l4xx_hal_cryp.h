@@ -149,7 +149,11 @@ typedef enum
 /**
   * @brief  CRYP handle Structure definition
   */
+#if (USE_HAL_CRYP_REGISTER_CALLBACKS == 1)
 typedef struct __CRYP_HandleTypeDef
+#else
+typedef struct
+#endif /* USE_HAL_CRYP_REGISTER_CALLBACKS */
 {
       AES_TypeDef              *Instance;        /*!< Register base address        */
 
@@ -701,8 +705,8 @@ void HAL_CRYP_IRQHandler(CRYP_HandleTypeDef *hcryp);
   */
 
 /* Peripheral State functions  ************************************************/
-HAL_CRYP_STATETypeDef HAL_CRYP_GetState(CRYP_HandleTypeDef *hcryp);
-uint32_t              HAL_CRYP_GetError(CRYP_HandleTypeDef *hcryp);
+HAL_CRYP_STATETypeDef HAL_CRYP_GetState(const CRYP_HandleTypeDef *hcryp);
+uint32_t              HAL_CRYP_GetError(const CRYP_HandleTypeDef *hcryp);
 
 /**
   * @}

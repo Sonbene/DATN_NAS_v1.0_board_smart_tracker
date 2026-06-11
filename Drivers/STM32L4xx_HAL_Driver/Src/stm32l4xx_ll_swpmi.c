@@ -20,11 +20,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32l4xx_ll_swpmi.h"
 #include "stm32l4xx_ll_bus.h"
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 #include "stm32_assert.h"
 #else
 #define assert_param(expr) ((void)0U)
-#endif
+#endif /* USE_FULL_ASSERT */
 
 /** @addtogroup STM32L4xx_LL_Driver
   * @{
@@ -47,13 +47,13 @@
 #define IS_LL_SWPMI_BITRATE_VALUE(__VALUE__) (((__VALUE__) <= 63U))
 
 #define IS_LL_SWPMI_SW_BUFFER_RX(__VALUE__) (((__VALUE__) == LL_SWPMI_SW_BUFFER_RX_SINGLE) \
-                                          || ((__VALUE__) == LL_SWPMI_SW_BUFFER_RX_MULTI))
+                                             || ((__VALUE__) == LL_SWPMI_SW_BUFFER_RX_MULTI))
 
 #define IS_LL_SWPMI_SW_BUFFER_TX(__VALUE__) (((__VALUE__) == LL_SWPMI_SW_BUFFER_TX_SINGLE) \
-                                          || ((__VALUE__) == LL_SWPMI_SW_BUFFER_TX_MULTI))
+                                             || ((__VALUE__) == LL_SWPMI_SW_BUFFER_TX_MULTI))
 
 #define IS_LL_SWPMI_VOLTAGE_CLASS(__VALUE__) (((__VALUE__) == LL_SWPMI_VOLTAGE_CLASS_C) \
-                                           || ((__VALUE__) == LL_SWPMI_VOLTAGE_CLASS_B))
+                                              || ((__VALUE__) == LL_SWPMI_VOLTAGE_CLASS_B))
 
 /**
   * @}
@@ -77,7 +77,7 @@
   *          - SUCCESS: SWPMI registers are de-initialized
   *          - ERROR: Not applicable
   */
-ErrorStatus LL_SWPMI_DeInit(SWPMI_TypeDef *SWPMIx)
+ErrorStatus LL_SWPMI_DeInit(const SWPMI_TypeDef *SWPMIx)
 {
   ErrorStatus status = SUCCESS;
 
@@ -109,7 +109,7 @@ ErrorStatus LL_SWPMI_DeInit(SWPMI_TypeDef *SWPMIx)
   *          - SUCCESS: SWPMI registers are initialized
   *          - ERROR: SWPMI registers are not initialized
   */
-ErrorStatus LL_SWPMI_Init(SWPMI_TypeDef *SWPMIx, LL_SWPMI_InitTypeDef *SWPMI_InitStruct)
+ErrorStatus LL_SWPMI_Init(SWPMI_TypeDef *SWPMIx, const LL_SWPMI_InitTypeDef *SWPMI_InitStruct)
 {
   ErrorStatus status = SUCCESS;
 

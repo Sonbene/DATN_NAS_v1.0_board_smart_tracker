@@ -147,7 +147,7 @@ typedef struct __USART_HandleTypeDef
 
 #endif /* USART_CR1_FIFOEN */
 #if defined(USART_CR2_SLVEN)
-  uint32_t                      SlaveMode;               /*!< Enable/Disable UART SPI Slave Mode. This parameter can be a value
+  uint32_t                      SlaveMode;               /*!< Enable/Disable USART SPI Slave Mode. This parameter can be a value
                                                               of @ref USARTEx_Slave_Mode */
 
 #endif /* USART_CR2_SLVEN */
@@ -566,8 +566,8 @@ typedef  void (*pUSART_CallbackTypeDef)(USART_HandleTypeDef *husart);  /*!< poin
   * @retval None
   */
 #define __HAL_USART_CLEAR_UDRFLAG(__HANDLE__)   __HAL_USART_CLEAR_FLAG((__HANDLE__), USART_CLEAR_UDRF)
-#endif /* USART_CR2_SLVEN */
 
+#endif /* USART_CR2_SLVEN */
 /** @brief  Enable the specified USART interrupt.
   * @param  __HANDLE__ specifies the USART Handle.
   * @param  __INTERRUPT__ specifies the USART interrupt source to enable.
@@ -588,10 +588,10 @@ typedef  void (*pUSART_CallbackTypeDef)(USART_HandleTypeDef *husart);  /*!< poin
   */
 #define __HAL_USART_ENABLE_IT(__HANDLE__, __INTERRUPT__)\
   (((((__INTERRUPT__) & USART_CR_MASK) >> USART_CR_POS) == 1U)?\
-   ((__HANDLE__)->Instance->CR1 |= (1U << ((__INTERRUPT__) & USART_IT_MASK))): \
+   ((__HANDLE__)->Instance->CR1 |= (1UL << ((__INTERRUPT__) & USART_IT_MASK))): \
    ((((__INTERRUPT__) & USART_CR_MASK) >> USART_CR_POS) == 2U)?\
-   ((__HANDLE__)->Instance->CR2 |= (1U << ((__INTERRUPT__) & USART_IT_MASK))): \
-   ((__HANDLE__)->Instance->CR3 |= (1U << ((__INTERRUPT__) & USART_IT_MASK))))
+   ((__HANDLE__)->Instance->CR2 |= (1UL << ((__INTERRUPT__) & USART_IT_MASK))): \
+   ((__HANDLE__)->Instance->CR3 |= (1UL << ((__INTERRUPT__) & USART_IT_MASK))))
 
 /** @brief  Disable the specified USART interrupt.
   * @param  __HANDLE__ specifies the USART Handle.
@@ -613,10 +613,10 @@ typedef  void (*pUSART_CallbackTypeDef)(USART_HandleTypeDef *husart);  /*!< poin
   */
 #define __HAL_USART_DISABLE_IT(__HANDLE__, __INTERRUPT__)\
   (((((__INTERRUPT__) & USART_CR_MASK) >> USART_CR_POS) == 1U)?\
-   ((__HANDLE__)->Instance->CR1 &= ~ (1U << ((__INTERRUPT__) & USART_IT_MASK))): \
+   ((__HANDLE__)->Instance->CR1 &= ~ (1UL << ((__INTERRUPT__) & USART_IT_MASK))): \
    ((((__INTERRUPT__) & USART_CR_MASK) >> USART_CR_POS) == 2U)?\
-   ((__HANDLE__)->Instance->CR2 &= ~ (1U << ((__INTERRUPT__) & USART_IT_MASK))): \
-   ((__HANDLE__)->Instance->CR3 &= ~ (1U << ((__INTERRUPT__) & USART_IT_MASK))))
+   ((__HANDLE__)->Instance->CR2 &= ~ (1UL << ((__INTERRUPT__) & USART_IT_MASK))): \
+   ((__HANDLE__)->Instance->CR3 &= ~ (1UL << ((__INTERRUPT__) & USART_IT_MASK))))
 
 /** @brief  Check whether the specified USART interrupt has occurred or not.
   * @param  __HANDLE__ specifies the USART Handle.
@@ -747,8 +747,7 @@ typedef  void (*pUSART_CallbackTypeDef)(USART_HandleTypeDef *husart);  /*!< poin
    ((__CLOCKPRESCALER__) == USART_PRESCALER_DIV16)  ? 16U :      \
    ((__CLOCKPRESCALER__) == USART_PRESCALER_DIV32)  ? 32U :      \
    ((__CLOCKPRESCALER__) == USART_PRESCALER_DIV64)  ? 64U :      \
-   ((__CLOCKPRESCALER__) == USART_PRESCALER_DIV128) ? 128U :     \
-   ((__CLOCKPRESCALER__) == USART_PRESCALER_DIV256) ? 256U : 1U)
+   ((__CLOCKPRESCALER__) == USART_PRESCALER_DIV128) ? 128U : 256U)
 
 /** @brief  BRR division operation to set BRR register in 8-bit oversampling mode.
   * @param  __PCLK__ USART clock.

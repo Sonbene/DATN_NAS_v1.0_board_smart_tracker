@@ -9,17 +9,17 @@
 /* ========================================================================================
  * SECTION: System Default Configurations
  * ======================================================================================== */
-#define DEFAULT_ACTIVE_INTERVAL_S       30      /**< 10 giây khi di chuyển */
-#define DEFAULT_STATIONARY_INTERVAL_S   30     /**< 5 phút khi đứng yên */
+#define DEFAULT_ACTIVE_INTERVAL_S       30      /**< 30 giây khi di chuyển */
+#define DEFAULT_STATIONARY_INTERVAL_S   300     /**< 30 giây khi đứng yên */
 #define MAX_REPORT_INTERVAL_S           3600    /**< Tối đa 1 tiếng */
-#define DEFAULT_SLEEP_DELAY_S           30      /**< 30 giây chờ trước khi ngủ */
+#define DEFAULT_SLEEP_DELAY_S           60      /**< 60 giây chờ trước khi ngủ */
 
 /* Cấu hình lưu trữ Config vào Flash */
 #define CONFIG_FLASH_SECTOR             1023    /**< Sector cuối cùng của W25Q32 (4MB) */
 #define CONFIG_FLASH_MAGIC              0xC04F  /**< "CONF" Magic word */
 
 /* Tính năng báo động tai nạn */
-#define ENABLE_CRASH_SMS                0       /**< 1: Bật, 0: Tắt gửi SMS khi có tai nạn */
+#define ENABLE_CRASH_SMS                1       /**< 1: Bật, 0: Tắt gửi SMS khi có tai nạn */
 
 /* Abstraction cho chân khóa xe (Relay) */
 #define VEHICLE_LOCK_PORT               GPIOA
