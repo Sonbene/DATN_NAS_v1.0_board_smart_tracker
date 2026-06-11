@@ -77,7 +77,7 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
         SIM_SendATCommand(handle, "AT+CFUN=1\r\n", "OK", 2000);   // Bật toàn bộ tính năng RF
         SIM_SendATCommand(handle, "AT+CREG=1\r\n", "OK", 1000);   // Bật báo cáo đăng ký mạng
         SIM_SendATCommand(handle, "AT+CGATT=1\r\n", "OK", 5000);  // Ép đăng ký GPRS/LTE Data
-        SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna (Có thể ERROR trên 7677S, kệ nó)
+        //SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna (Có thể ERROR trên 7677S, kệ nó)
     } else {
         LOG_ERROR("[SIM] Failed to Power On!");
     }
@@ -208,13 +208,15 @@ SIM_Status_t SIM_SendSMS(SIM_Handle_t *handle, const char *phone, const char *ms
     snprintf(cmd, sizeof(cmd), "AT+CMGS=\"%s\"\r\n", phone);
     
     LOG_INFO("[SIM] Sending SMS to %s...", phone);
-    if (SIM_SendATCommand(handle, cmd, ">", 2000) == SIM_OK) {
-        BSP_UART_Transmit(handle->uart_handle, (uint8_t*)msg, strlen(msg), 500);
-        uint8_t ctrl_z = 0x1A;
-        BSP_UART_Transmit(handle->uart_handle, &ctrl_z, 1, 100);
-        return SIM_SendATCommand(handle, NULL, "OK", 10000);
-    }
-    return SIM_ERROR;
+    
+    uint16_t msg_len = strlen(msg);
+    if (msg_len > 160) msg_len = 160; // Max SMS length
+    
+    uint8_t payload[165];
+    memcpy(payload, msg, msg_len);
+    payload[msg_len] = 0x1A; // Ctrl+Z
+    
+    return SIM_SendATWithData(handle, cmd, payload, msg_len + 1, "OK", 2000, 10000);
 }
 
 SIM_Status_t SIM_ReadSMS(SIM_Handle_t *handle, int index, char *out_phone, char *out_time, char *out_msg, uint16_t max_len) {
