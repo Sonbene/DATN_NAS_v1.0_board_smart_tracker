@@ -19,7 +19,7 @@
 #define CONFIG_FLASH_MAGIC              0xC04F  /**< "CONF" Magic word */
 
 /* Tính năng báo động tai nạn */
-#define ENABLE_CRASH_SMS                0       /**< 1: Bật, 0: Tắt gửi SMS khi có tai nạn */
+#define ENABLE_CRASH_SMS                1       /**< 1: Bật, 0: Tắt gửi SMS khi có tai nạn */
 
 /* Abstraction cho chân khóa xe (Relay) */
 #define VEHICLE_LOCK_PORT               GPIOA

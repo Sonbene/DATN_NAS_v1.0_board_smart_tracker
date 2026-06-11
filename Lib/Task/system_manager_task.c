@@ -115,12 +115,17 @@ static void System_Manager_Entry(void const * argument) {
             bool gps_ok = ATGM336H_Task_GetLatestInfo(&gps_info);
             
             if (!gps_ok) {
-                LOG_INFO("[SYS_MGR] GPS no fix, triggering LBS fallback...");
-                /* Chỉ kích hoạt truy vấn. Kết quả sẽ được URC handler tự động cập nhật vào System Service. */
-                if (SIM_GetLBSPosition(&sim_modem, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL) == SIM_OK) {
-                    LOG_INFO("[SYS_MGR] LBS query triggered successfully");
+                if (sim_modem.is_net_ready) {
+                    LOG_INFO("[SYS_MGR] GPS no fix, triggering LBS fallback...");
+                    /* Chỉ kích hoạt truy vấn. Kết quả sẽ được URC handler tự động cập nhật vào System Service. */
+                    if (SIM_GetLBSPosition(&sim_modem, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL) == SIM_OK) {
+                        LOG_INFO("[SYS_MGR] LBS query triggered successfully");
+                    } else {
+                        LOG_WARN("[SYS_MGR] LBS query failed to trigger");
+                        System_Service_UpdateSource(POS_SOURCE_NO_FIX);
+                    }
                 } else {
-                    LOG_WARN("[SYS_MGR] LBS query failed to trigger");
+                    LOG_WARN("[SYS_MGR] GPS no fix, but network not ready for LBS");
                     System_Service_UpdateSource(POS_SOURCE_NO_FIX);
                 }
             }
@@ -154,6 +159,10 @@ static void System_Manager_Entry(void const * argument) {
                 /* 4a. Nếu là cảnh báo TAI NẠN, gửi thêm SMS đến các số điện thoại trong Config */
                 if (data.sensor.alert_type == ALERT_CRASH) {
                     #if ENABLE_CRASH_SMS
+                    /* TRÁNH XUNG ĐỘT UART: Tạm dừng SysMgr 3 giây để SIM_Task ưu tiên lấy Lock UART 
+                     * và gửi tin nhắn MQTT (crash alert) trước khi SysMgr chiếm UART để gửi SMS. */
+                    osDelay(3000);
+                    
                     SystemConfig_t cfg;
                     System_Service_GetConfig(&cfg);
                     char sms_buf[160];
@@ -164,14 +173,17 @@ static void System_Manager_Entry(void const * argument) {
                     if (strlen(cfg.sms_phone1) >= 10) {
                         LOG_INFO("[SYS_MGR] Sending Crash SMS to Phone 1: %s", cfg.sms_phone1);
                         SMS_Service_Send(&sim_modem, cfg.sms_phone1, sms_buf);
+                        osDelay(2000);
                     }
                     if (strlen(cfg.sms_phone2) >= 10) {
                         LOG_INFO("[SYS_MGR] Sending Crash SMS to Phone 2: %s", cfg.sms_phone2);
                         SMS_Service_Send(&sim_modem, cfg.sms_phone2, sms_buf);
+                        osDelay(2000);
                     }
                     if (strlen(cfg.sms_phone3) >= 10) {
                         LOG_INFO("[SYS_MGR] Sending Crash SMS to Phone 3: %s", cfg.sms_phone3);
                         SMS_Service_Send(&sim_modem, cfg.sms_phone3, sms_buf);
+                        osDelay(2000);
                     }
                     #endif
                 }

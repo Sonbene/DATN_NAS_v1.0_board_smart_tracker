@@ -72,12 +72,23 @@ void SIM_PowerOn(SIM_Handle_t *handle) {
         
         /* Cấu hình các tham số giúp hệ thống điện ổn định và bắt sóng tốt */
         LOG_INFO("[SIM] Optimizing power and network registration...");
+        SIM_SendATCommand(handle, "AT+CVAUXS=1\r\n", "OK", 1000);  // Bật nguồn Antenna (Khôi phục nếu bị tắt trước đó)
         SIM_SendATCommand(handle, "ATE0\r\n", "OK", 1000);         // Tắt echo
         SIM_SendATCommand(handle, "AT+CMEE=2\r\n", "OK", 1000);   // Bật lỗi chi tiết
-        SIM_SendATCommand(handle, "AT+CFUN=1\r\n", "OK", 2000);   // Bật toàn bộ tính năng RF
+        
+        /* Dọn dẹp IP stack cũ có thể bị kẹt từ lần boot trước */
+        SIM_SendATCommand(handle, "AT+CNACT=0,0\r\n", "OK", 2000);  // Deactivate PDP cũ
+        SIM_SendATCommand(handle, "AT+CNACT=1,0\r\n", "OK", 2000);
+        
+        /* Cấu hình APN thủ công */
+        LOG_INFO("[SIM] Setting APN configuration...");
+        SIM_SendATCommand(handle, "AT+CGDCONT=1,\"IP\",\"v-internet\"\r\n", "OK", 2000);
+        SIM_SendATCommand(handle, "AT+CNCFG=0,1,\"v-internet\"\r\n", "OK", 2000);
+        SIM_SendATCommand(handle, "AT+CNCFG=1,1,\"v-internet\"\r\n", "OK", 2000);
+        
+        SIM_SendATCommand(handle, "AT+CFUN=1\r\n", "OK", 5000);   // Bật toàn bộ tính năng RF
+        osDelay(1000);
         SIM_SendATCommand(handle, "AT+CREG=1\r\n", "OK", 1000);   // Bật báo cáo đăng ký mạng
-        SIM_SendATCommand(handle, "AT+CGATT=1\r\n", "OK", 5000);  // Ép đăng ký GPRS/LTE Data
-        SIM_SendATCommand(handle, "AT+CVAUXS=0\r\n", "OK", 1000); // Tắt nguồn Antenna (Có thể ERROR trên 7677S, kệ nó)
     } else {
         LOG_ERROR("[SIM] Failed to Power On!");
     }
@@ -202,19 +213,26 @@ SIM_Status_t SIM_GetOperator(SIM_Handle_t *handle, char *out, uint16_t max_len) 
 }
 
 SIM_Status_t SIM_SendSMS(SIM_Handle_t *handle, const char *phone, const char *msg) {
+    if (handle == NULL || phone == NULL || msg == NULL) return SIM_ERROR;
+    
     char cmd[64];
     /* Đảm bảo đang ở chế độ Text Mode */
-    SIM_SendATCommand(handle, "AT+CMGF=1\r\n", "OK", 1000);
+    SIM_SendATCommand(handle, "AT+CMGF=1\r\n", "OK", 2000);
     snprintf(cmd, sizeof(cmd), "AT+CMGS=\"%s\"\r\n", phone);
     
     LOG_INFO("[SIM] Sending SMS to %s...", phone);
-    if (SIM_SendATCommand(handle, cmd, ">", 2000) == SIM_OK) {
-        BSP_UART_Transmit(handle->uart_handle, (uint8_t*)msg, strlen(msg), 500);
-        uint8_t ctrl_z = 0x1A;
-        BSP_UART_Transmit(handle->uart_handle, &ctrl_z, 1, 100);
-        return SIM_SendATCommand(handle, NULL, "OK", 10000);
-    }
-    return SIM_ERROR;
+    
+    uint16_t msg_len = strlen(msg);
+    uint8_t *payload = malloc(msg_len + 1);
+    if (!payload) return SIM_ERROR;
+    
+    memcpy(payload, msg, msg_len);
+    payload[msg_len] = 0x1A; // CTRL+Z
+    
+    SIM_Status_t status = SIM_SendATWithData(handle, cmd, payload, msg_len + 1, "OK", 5000, 15000);
+    free(payload);
+    
+    return status;
 }
 
 SIM_Status_t SIM_ReadSMS(SIM_Handle_t *handle, int index, char *out_phone, char *out_time, char *out_msg, uint16_t max_len) {
@@ -560,8 +578,8 @@ SIM_Status_t SIM_GetLBSPosition(SIM_Handle_t *handle, float *lat, float *lon,
     if (handle == NULL) return SIM_ERROR;
 
     /* LBS yêu cầu Network IP stack (CNACT) phải mở */
-    if (SIM_SendATCommand(handle, "AT+CNACT?\r\n", "+CNACT: 1,1", 1000) != SIM_OK) {
-        SIM_SendATCommand(handle, "AT+CNACT=1,1\r\n", "OK", 5000);
+    if (SIM_SendATCommand(handle, "AT+CNACT?\r\n", "+CNACT: 0,1", 1000) != SIM_OK) {
+        SIM_SendATCommand(handle, "AT+CNACT=0,1\r\n", "OK", 5000);
         osDelay(500);
     }
 
