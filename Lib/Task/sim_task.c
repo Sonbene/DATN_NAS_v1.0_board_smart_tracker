@@ -219,7 +219,7 @@ static SIM_State_t SIM_Handle_ServicesInit(void) {
         .client_index = 0,
         .host = MQTT_BROKER_HOST,
         .port = MQTT_BROKER_PORT,
-        .client_id = MQTT_CLIENT_ID,
+        .client_id = g_sim_imei,
         .username = MQTT_USERNAME,
         .password = MQTT_PASSWORD,
         .keepalive_sec = MQTT_KEEPALIVE_SEC,
