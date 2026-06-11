@@ -86,9 +86,11 @@ static void System_Manager_Entry(void const * argument) {
 
         /* 3. Logic gửi dữ liệu định kỳ */
         uint32_t current_tick = osKernelSysTick();
-        uint32_t interval_ms = (data.mode == SYS_MODE_ACTIVE) ? 
-                               (config.active_interval_s > 0 ? config.active_interval_s * 1000 : DEFAULT_ACTIVE_INTERVAL_S * 1000) : 
-                               (config.stationary_interval_s > 0 ? config.stationary_interval_s * 1000 : DEFAULT_STATIONARY_INTERVAL_S * 1000);
+        
+        /* Thay đổi theo yêu cầu: Khi chưa ngủ (cả ACTIVE và STATIONARY), luôn báo cáo theo chu kỳ active_interval_s.
+         * Thông số stationary_interval_s (siv) giờ đây CHỈ dùng làm thời gian ngủ sâu (RTC Wakeup). */
+        uint32_t interval_ms = (config.active_interval_s > 0) ? 
+                               (config.active_interval_s * 1000) : (DEFAULT_ACTIVE_INTERVAL_S * 1000);
 
         if (interval_ms > (MAX_REPORT_INTERVAL_S * 1000)) interval_ms = DEFAULT_ACTIVE_INTERVAL_S * 1000;
 
